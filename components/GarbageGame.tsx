@@ -2,7 +2,7 @@ import { AnimatePresence, Motion } from "@legendapp/motion";
 import { observer } from "@legendapp/state/react";
 import { useRouter } from "expo-router";
 import React, { useEffect } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Dimensions, Pressable, Text, View } from "react-native";
 import { useColors } from "../colors";
 import { botTurn, isGameOver } from "../logic/game";
 import {
@@ -10,11 +10,13 @@ import {
   drawCardState,
   gameState,
   playCardState,
+  resetGame,
 } from "../state/trash";
 import { Button } from "./Button";
 import { Card, cardAspectRatio } from "./Card";
 import { CardHStack, CardVStack } from "./CardStack";
 import { HStack, VStack } from "./Stack";
+import { Ionicons } from "@expo/vector-icons";
 
 export const GarbageGame: React.FC = observer(() => {
   const router = useRouter();
@@ -47,76 +49,90 @@ export const GarbageGame: React.FC = observer(() => {
           paddingHorizontal: 16,
         }}
       >
-        <HStack gap={8}>
-          {gameState.players.get().map((player, index) => {
-            const activePlayer = currentPlayerIndex === index;
+        <HStack justify="space-between">
+          <HStack gap={8}>
+            {gameState.players.get().map((player, index) => {
+              const activePlayer = currentPlayerIndex === index;
 
-            return (
-              <View
-                key={index}
-                style={{
-                  borderColor: activePlayer
-                    ? colorByMode("blue600", "blue800")
-                    : colorByMode("gray300", "gray100"),
-                  borderWidth: 2,
-                  width: 40,
-                  height: 40,
-                  borderRadius: 100,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  overflow: "hidden",
-                  position: "relative",
-                }}
-              >
-                <Text
+              return (
+                <View
                   key={index}
                   style={{
-                    fontSize: 28,
-                    lineHeight: 34,
-                    textAlign: "center",
+                    borderColor: activePlayer
+                      ? colorByMode("blue600", "blue800")
+                      : colorByMode("gray300", "gray500"),
+                    borderWidth: 2,
+                    width: 40,
+                    height: 40,
+                    borderRadius: 100,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    overflow: "hidden",
                     position: "relative",
-                    left: 1,
                   }}
                 >
-                  {player.isBot ? "🤖" : "🙂"}
-                </Text>
-              </View>
-            );
-          })}
+                  <Text
+                    key={index}
+                    style={{
+                      fontSize: 28,
+                      lineHeight: 34,
+                      textAlign: "center",
+                      position: "relative",
+                      left: 1,
+                    }}
+                  >
+                    {player.isBot ? "🤖" : "🙂"}
+                  </Text>
+                </View>
+              );
+            })}
+          </HStack>
+          <View>
+            <Pressable
+              onPress={() => {
+                resetGame();
+              }}
+            >
+              <Ionicons
+                name="refresh-circle"
+                size={40}
+                color={colorByMode("blue800", "blue700")}
+              />
+            </Pressable>
+          </View>
         </HStack>
         <AnimatePresence>
           <Motion.View
             key="discard-pile"
             style={{
               position: "absolute",
-              top: 0,
-              right: 16,
+              top: 4,
+              // center the pile
+              left: Dimensions.get("window").width / 2 - 20,
               width: 40,
             }}
             animate={{
               opacity: gameState.discardPile.get().length > 0 ? 1 : 0,
-              right: gameState.discardPile.get().length > 0 ? 16 : -100,
+              top: gameState.discardPile.get().length > 0 ? 4 : -100,
             }}
             exit={{
               opacity: 0,
-              right: -100,
+              top: -100,
             }}
           >
             <Pressable>
               <CardVStack>
-                {gameState.discardPile
-                  .get()
-                  .reverse()
-                  .map((card, index) => (
-                    <Card
-                      key={index}
-                      {...card}
-                      faceUp
-                      style={{
-                        width: 40,
-                      }}
-                    />
-                  ))}
+                {gameState.discardPile.get().map((card, index) => (
+                  <Card
+                    key={index}
+                    {...card}
+                    // faceup only for last item in discard pile
+                    faceUp={index === gameState.discardPile.get().length - 1}
+                    style={{
+                      width: 40,
+                    }}
+                  />
+                ))}
               </CardVStack>
             </Pressable>
           </Motion.View>

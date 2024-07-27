@@ -103,14 +103,12 @@ export const drawCard = (
       throw new Error("No cards in discard pile");
     }
 
-    const drawnCard = discardPile.pop();
-    if (!drawnCard) {
-      throw new Error("Failed to draw a card from discard pile");
-    }
+    const drawnCard = discardPile[discardPile.length - 1];
+    const newDiscardPile = discardPile.slice(0, -1);
 
     return {
       ...state,
-      discardPile,
+      discardPile: newDiscardPile,
       currentDrawnCard: drawnCard,
     };
   }
@@ -187,7 +185,7 @@ export const discardCard = (state: GameState): GameState => {
 
   return {
     ...state,
-    discardPile: [currentDrawnCard, ...discardPile],
+    discardPile: [...discardPile, currentDrawnCard],
     currentDrawnCard: null,
     currentPlayerIndex: (currentPlayerIndex + 1) % players.length,
   };
