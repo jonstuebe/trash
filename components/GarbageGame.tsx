@@ -1,8 +1,10 @@
 import { AnimatePresence, Motion } from "@legendapp/motion";
 import { observer } from "@legendapp/state/react";
-import React, { useEffect, useMemo } from "react";
+import { useRouter } from "expo-router";
+import React, { useEffect } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useColors } from "../colors";
+import { botTurn, isGameOver } from "../logic/game";
 import {
   discardCardState,
   drawCardState,
@@ -13,8 +15,6 @@ import { Button } from "./Button";
 import { Card, cardAspectRatio } from "./Card";
 import { CardHStack, CardVStack } from "./CardStack";
 import { HStack, VStack } from "./Stack";
-import { isGameOver } from "../logic/game";
-import { useRouter } from "expo-router";
 
 export const GarbageGame: React.FC = observer(() => {
   const router = useRouter();
@@ -23,12 +23,21 @@ export const GarbageGame: React.FC = observer(() => {
   const currentPlayer = gameState.players[currentPlayerIndex].get();
   const currentDrawnCard = gameState.currentDrawnCard.get();
   const gameOver = isGameOver(gameState.get());
+  const isCurrentPlayerBot = currentPlayer.isBot;
 
   useEffect(() => {
     if (gameOver) {
       router.push("complete");
     }
   }, [gameOver]);
+
+  useEffect(() => {
+    if (isCurrentPlayerBot) {
+      setTimeout(() => {
+        gameState.set((state) => botTurn(state));
+      }, 1000);
+    }
+  }, [isCurrentPlayerBot, currentPlayerIndex, currentDrawnCard]);
 
   return (
     <View style={{ flex: 1, justifyContent: "space-between" }}>
@@ -162,7 +171,6 @@ export const GarbageGame: React.FC = observer(() => {
         </CardHStack>
       </VStack>
       <VStack padding={16} gap={16}>
-        {/* {checkGameOver() && <ThemedText>Game Over!</ThemedText>} */}
         <View
           style={{
             width: "100%",
@@ -202,19 +210,21 @@ export const GarbageGame: React.FC = observer(() => {
           <Button
             title="From Deck"
             onPress={() => drawCardState("deck")}
-            disabled={!!currentDrawnCard}
+            disabled={!!currentDrawnCard || isCurrentPlayerBot}
           />
           <Button
             title="From Discard"
             onPress={() => drawCardState("discard")}
             disabled={
-              !!currentDrawnCard || gameState.discardPile.get().length === 0
+              !!currentDrawnCard ||
+              gameState.discardPile.get().length === 0 ||
+              isCurrentPlayerBot
             }
           />
           <Button
             title="Discard"
             onPress={discardCardState}
-            disabled={!currentDrawnCard}
+            disabled={!currentDrawnCard || isCurrentPlayerBot}
           />
         </HStack>
       </VStack>
