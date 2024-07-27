@@ -68,14 +68,19 @@ export const drawCard = (
 
   if (source === "deck") {
     if (deck.length === 0) {
-      if (discardPile.length === 0) {
-        throw new Error("No cards left to draw");
+      if (discardPile.length <= 1) {
+        Alert.alert("No Cards Left", "Shuffling cards");
       }
-      // Shuffle the discard pile to create a new deck
+      // Keep the last card in the discard pile
+      const lastCard = discardPile[discardPile.length - 1];
+      // Take all other cards from the discard pile
+      const cardsToShuffle = discardPile.slice(0, -1);
+      // Shuffle the cards
+      const newDeck = shuffleDeck(cardsToShuffle);
       return {
         ...state,
-        deck: shuffleDeck([...discardPile]),
-        discardPile: [],
+        deck: newDeck,
+        discardPile: [lastCard],
       };
     }
 
