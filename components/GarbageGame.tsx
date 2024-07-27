@@ -35,7 +35,7 @@ export const GarbageGame: React.FC = observer(() => {
     if (isCurrentPlayerBot) {
       setTimeout(() => {
         gameState.set((state) => botTurn(state));
-      }, 1000);
+      }, 1500);
     }
   }, [isCurrentPlayerBot, currentPlayerIndex, currentDrawnCard]);
 
@@ -71,16 +71,14 @@ export const GarbageGame: React.FC = observer(() => {
                 <Text
                   key={index}
                   style={{
-                    fontSize: 32,
-                    lineHeight: 32,
-                    position: "absolute",
+                    fontSize: 28,
+                    lineHeight: 34,
                     textAlign: "center",
-                    width: "100%",
-                    bottom: -4,
-                    left: 0,
+                    position: "relative",
+                    left: 1,
                   }}
                 >
-                  🙎
+                  {player.isBot ? "🤖" : "🙂"}
                 </Text>
               </View>
             );
