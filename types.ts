@@ -21,14 +21,3 @@ export interface Card {
 }
 
 export type Deck = Card[];
-export type Tableau = Card[][];
-export type StockPile = Card[];
-export type WastePile = Card[];
-export type Foundations = Card[][]; // Four arrays, one for each suit
-
-export interface GameState {
-  tableau: Tableau;
-  stockPile: StockPile;
-  wastePile: WastePile;
-  foundations: Foundations;
-}

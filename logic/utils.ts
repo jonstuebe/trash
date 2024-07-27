@@ -1,4 +1,4 @@
-import { Card, Tableau, WastePile } from "../types";
+import { Card } from "../types";
 
 export const getLastInStack = <T>(stack: T[]): T | null =>
   stack.length > 0 ? stack[stack.length - 1] : null;

@@ -18,6 +18,10 @@ export default function RootLayout() {
           name="index"
           options={{ headerShown: false, title: "Game" }}
         />
+        <Stack.Screen
+          name="complete"
+          options={{ headerShown: false, presentation: "modal" }}
+        />
         <Stack.Screen name="+not-found" />
       </Stack>
     </ThemeProvider>

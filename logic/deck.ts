@@ -1,4 +1,4 @@
-import { Card, Deck, Suit, Rank } from "../types";
+import { Deck, Rank, Suit } from "../types";
 
 const shuffleDeck = (deck: Deck): Deck => {
   for (let i = deck.length - 1; i > 0; i--) {

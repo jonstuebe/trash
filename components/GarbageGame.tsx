@@ -1,30 +1,34 @@
-import React, { useEffect } from "react";
-import { View, Pressable, PressableProps, Text } from "react-native";
-import { observer } from "@legendapp/state/react";
-import {
-  gameState,
-  drawCardState,
-  playCardState,
-  discardCardState,
-  checkGameOver,
-} from "../state/garbageState";
-import { Card, cardAspectRatio } from "./Card";
-import { ThemedText } from "./ThemedText";
-import { HStack, VStack } from "./Stack";
-import { CardHStack, CardVStack } from "./CardStack";
-import { useColors } from "../colors";
-import { observable } from "@legendapp/state";
 import { AnimatePresence, Motion } from "@legendapp/motion";
+import { observer } from "@legendapp/state/react";
+import React, { useEffect, useMemo } from "react";
+import { Pressable, Text, View } from "react-native";
+import { useColors } from "../colors";
+import {
+  discardCardState,
+  drawCardState,
+  gameState,
+  playCardState,
+} from "../state/trash";
 import { Button } from "./Button";
-
-// @todo allow users to use a emoji picker to select a custom emoji for their player
-const playerEmojis = observable(["🙎", "🙎"]);
+import { Card, cardAspectRatio } from "./Card";
+import { CardHStack, CardVStack } from "./CardStack";
+import { HStack, VStack } from "./Stack";
+import { isGameOver } from "../logic/game";
+import { useRouter } from "expo-router";
 
 export const GarbageGame: React.FC = observer(() => {
-  const { colors } = useColors();
+  const router = useRouter();
+  const { colorByMode } = useColors();
   const currentPlayerIndex = gameState.currentPlayerIndex.get();
   const currentPlayer = gameState.players[currentPlayerIndex].get();
   const currentDrawnCard = gameState.currentDrawnCard.get();
+  const gameOver = isGameOver(gameState.get());
+
+  useEffect(() => {
+    if (gameOver) {
+      router.push("complete");
+    }
+  }, [gameOver]);
 
   return (
     <View style={{ flex: 1, justifyContent: "space-between" }}>
@@ -42,7 +46,9 @@ export const GarbageGame: React.FC = observer(() => {
               <View
                 key={index}
                 style={{
-                  borderColor: activePlayer ? colors.blue600 : colors.gray100,
+                  borderColor: activePlayer
+                    ? colorByMode("blue600", "blue800")
+                    : colorByMode("gray300", "gray100"),
                   borderWidth: 2,
                   width: 40,
                   height: 40,
@@ -65,7 +71,7 @@ export const GarbageGame: React.FC = observer(() => {
                     left: 0,
                   }}
                 >
-                  {playerEmojis[index].get()}
+                  🙎
                 </Text>
               </View>
             );
