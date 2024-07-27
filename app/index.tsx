@@ -1,5 +1,5 @@
 import { SafeAreaView } from "react-native-safe-area-context";
-import { GarbageGame } from "@/components/GarbageGame";
+import { Game } from "@/components/Game";
 import { useColors } from "../colors";
 
 export default function HomeScreen() {
@@ -11,7 +11,7 @@ export default function HomeScreen() {
         backgroundColor: colorByMode("gray100", "gray950"),
       }}
     >
-      <GarbageGame />
+      <Game />
     </SafeAreaView>
   );
 }

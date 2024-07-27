@@ -18,7 +18,7 @@ import { CardHStack, CardVStack } from "./CardStack";
 import { HStack, VStack } from "./Stack";
 import { Ionicons } from "@expo/vector-icons";
 
-export const GarbageGame: React.FC = observer(() => {
+export const Game: React.FC = observer(() => {
   const router = useRouter();
   const { colorByMode } = useColors();
   const currentPlayerIndex = gameState.currentPlayerIndex.get();
