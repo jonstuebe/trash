@@ -9,11 +9,13 @@
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/splash.png",
-      "resizeMode": "contain",
+      "resizeMode": "cover",
       "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "buildNumber": "1",
+      "bundleIdentifier": "com.jonstuebe.trash"
     },
     "android": {
       "adaptiveIcon": {
@@ -31,6 +33,20 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "fda403de-2e14-4835-ba17-4382ea47b1f7"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/fda403de-2e14-4835-ba17-4382ea47b1f7"
     }
   }
 }

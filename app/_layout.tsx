@@ -20,7 +20,11 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="complete"
-          options={{ headerShown: false, presentation: "modal" }}
+          options={{
+            headerShown: false,
+            presentation: "transparentModal",
+            animation: "fade",
+          }}
         />
         <Stack.Screen name="+not-found" />
       </Stack>

@@ -1,0 +1,36 @@
+{
+  "build": {
+    "dev": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "preview"
+    },
+    "dev-sim": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "channel": "preview"
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview"
+    },
+    "production": {
+      "channel": "production",
+      "distribution": "store",
+      "ios": {
+        "autoIncrement": "buildNumber"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "jstuebe@gmail.com",
+        "appleTeamId": "5US3HNY357"
+      }
+    }
+  }
+}
