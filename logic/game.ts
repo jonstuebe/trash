@@ -21,6 +21,8 @@ export interface GameState {
 export const createGameState = (deck = getNewDeck()): GameState => {
   const players: PlayerState[] = [];
 
+  deck = [...shuffleDeck(deck)];
+
   for (let i = 0; i < 2; i++) {
     const layout = Array(10)
       .fill(null)
