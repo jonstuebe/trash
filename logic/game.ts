@@ -1,4 +1,4 @@
-import { Alert } from "react-native";
+import { emitter } from "../emitter";
 import { Card, Deck } from "../types";
 import { getNewDeck } from "./deck";
 
@@ -173,8 +173,11 @@ export const playCard = (state: GameState, position: number): GameState => {
     };
   }
 
-  // If none of the above conditions are met, the move is invalid
-  Alert.alert("Invalid move", "You cannot play that card here");
+  // if the current user is a bot
+  if (!currentPlayer.isBot) {
+    // If none of the above conditions are met, the move is invalid
+    emitter.emit("invalidMove");
+  }
 
   return state;
 };

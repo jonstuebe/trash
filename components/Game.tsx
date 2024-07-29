@@ -17,6 +17,8 @@ import { Card, cardAspectRatio } from "./Card";
 import { CardHStack, CardVStack } from "./CardStack";
 import { HStack, VStack } from "./Stack";
 import { Ionicons } from "@expo/vector-icons";
+import { Shake, useShake } from "./Shake";
+import { emitter } from "../emitter";
 
 export const Game: React.FC = observer(() => {
   const router = useRouter();
@@ -26,6 +28,18 @@ export const Game: React.FC = observer(() => {
   const currentDrawnCard = gameState.currentDrawnCard.get();
   const gameOver = isGameOver(gameState.get());
   const isCurrentPlayerBot = currentPlayer.isBot;
+  const { shakeProps, shake } = useShake();
+
+  useEffect(() => {
+    const onInvalid = () => {
+      shake();
+    };
+
+    emitter.on("invalidMove", onInvalid);
+    return () => {
+      emitter.off("invalidMove", onInvalid);
+    };
+  }, []);
 
   useEffect(() => {
     if (gameOver) {
@@ -194,28 +208,30 @@ export const Game: React.FC = observer(() => {
         >
           <AnimatePresence>
             {currentDrawnCard ? (
-              <Motion.View
-                key="A"
-                initial={{
-                  opacity: 0,
-                  x: -100,
-                }}
-                animate={{
-                  opacity: 1,
-                  x: 0,
-                }}
-                exit={{
-                  opacity: 0,
-                  x: 100,
-                }}
-                style={{
-                  height: 160,
-                  aspectRatio: cardAspectRatio,
-                  alignItems: "center",
-                }}
-              >
-                <Card {...currentDrawnCard} faceUp />
-              </Motion.View>
+              <Shake {...shakeProps} key="S">
+                <Motion.View
+                  key="A"
+                  initial={{
+                    opacity: 0,
+                    x: -100,
+                  }}
+                  animate={{
+                    opacity: 1,
+                    x: 0,
+                  }}
+                  exit={{
+                    opacity: 0,
+                    x: 100,
+                  }}
+                  style={{
+                    height: 160,
+                    aspectRatio: cardAspectRatio,
+                    alignItems: "center",
+                  }}
+                >
+                  <Card {...currentDrawnCard} faceUp />
+                </Motion.View>
+              </Shake>
             ) : null}
           </AnimatePresence>
         </View>

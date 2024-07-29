@@ -6,9 +6,7 @@ import {
   playCard,
   discardCard,
   isGameOver,
-  findBestMove,
 } from "../logic/game";
-import { Alert } from "react-native";
 
 // Initialize state
 const initialState = createGameState();
