@@ -1,5 +1,5 @@
 import { BlurView } from "expo-blur";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { iOSUIKit } from "react-native-typography";
 
 import { View, useColorScheme } from "react-native";
@@ -16,12 +16,10 @@ export default function Complete() {
   const mode = useColorScheme() ?? "light";
   const router = useRouter();
   const confettiRef = useRef<Confetti>(null);
+  const isWinner = gameState.currentPlayerIndex.get() === 0;
 
   useEffect(() => {
-    const winner = gameState.players.find((player) =>
-      player.layout.every((card) => card === null)
-    );
-    if (winner && !winner.isBot) {
+    if (isWinner) {
       confettiRef.current?.startConfetti();
     }
   }, []);
@@ -54,9 +52,7 @@ export default function Complete() {
               },
             ]}
           >
-            {gameState.currentPlayerIndex.get() === 0
-              ? "You Won 😍"
-              : "You Lost 🥲"}
+            {isWinner ? "You Won 😍" : "You Lost 🥲"}
           </ThemedText>
           <Button
             title="Play Again"

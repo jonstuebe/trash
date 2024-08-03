@@ -203,6 +203,16 @@ export const isGameOver = (state: GameState): boolean => {
   );
 };
 
+export const isPlayerWinner = (state: GameState): boolean => {
+  if (isGameOver(state)) {
+    const humanPlayer = state.players.find((player) => !player.isBot);
+    if (!humanPlayer) return false;
+
+    return humanPlayer.layout.every((card) => card !== null && card.faceUp);
+  }
+  return false;
+};
+
 // New function to find the best move for the bot
 export const findBestMove = (state: GameState): number | null => {
   const currentPlayer = state.players[state.currentPlayerIndex];

@@ -6,6 +6,7 @@ import {
   playCard,
   discardCard,
   isGameOver,
+  isPlayerWinner,
 } from "../logic/game";
 
 // Initialize state
@@ -56,6 +57,10 @@ export const discardCardState = () => {
 
 export const checkGameOver = () => {
   return isGameOver(gameState.get());
+};
+
+export const checkPlayerWinner = () => {
+  return isPlayerWinner(gameState.get());
 };
 
 export const resetGame = () => {

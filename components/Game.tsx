@@ -6,6 +6,7 @@ import { Dimensions, Pressable, Text, View } from "react-native";
 import { useColors } from "../colors";
 import { botTurn, isGameOver } from "../logic/game";
 import {
+  checkPlayerWinner,
   discardCardState,
   drawCardState,
   gameState,
@@ -31,13 +32,9 @@ export const Game: React.FC = observer(() => {
   const { shakeProps, shake } = useShake();
 
   useEffect(() => {
-    const onInvalid = () => {
-      shake();
-    };
-
-    emitter.on("invalidMove", onInvalid);
+    emitter.on("invalidMove", shake);
     return () => {
-      emitter.off("invalidMove", onInvalid);
+      emitter.off("invalidMove", shake);
     };
   }, []);
 
@@ -165,6 +162,7 @@ export const Game: React.FC = observer(() => {
                   rank={card.rank}
                   faceUp={card.faceUp}
                   onPressCard={() => playCardState(index)}
+                  disabled={isCurrentPlayerBot}
                 />
               ) : (
                 <Card key={index} suit="hearts" rank="A" faceUp={false} />
@@ -187,6 +185,7 @@ export const Game: React.FC = observer(() => {
                       index + Math.ceil(currentPlayer.layout.length / 2)
                     )
                   }
+                  disabled={isCurrentPlayerBot}
                 />
               ) : (
                 <Card

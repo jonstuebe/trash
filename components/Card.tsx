@@ -53,6 +53,7 @@ function Hexagons() {
 export interface CardProps extends CardType {
   style?: StyleProp<ViewStyle>;
   onPressCard?: (card: CardType) => void;
+  disabled?: boolean;
 }
 
 export type CardHandle = {
@@ -65,6 +66,7 @@ export function Card({
   rank,
   faceUp,
   onPressCard,
+  disabled,
   style,
 }: CardProps): ReactElement {
   const { layout, onLayout } = useLayout();
@@ -77,6 +79,7 @@ export function Card({
   return (
     <Pressable
       onLayout={onLayout}
+      disabled={disabled}
       onPress={() => onPressCard?.({ suit, rank, faceUp })}
       style={[
         {
