@@ -159,7 +159,8 @@ export const playCard = (state: GameState, position: number): GameState => {
   if (
     oldCard.rank === "J" &&
     currentDrawnCard.rank !== "Q" &&
-    currentDrawnCard.rank !== "K"
+    currentDrawnCard.rank !== "K" &&
+    isCardPlayable(currentDrawnCard, position)
   ) {
     newLayout[position] = { ...currentDrawnCard, faceUp: true };
     return {
