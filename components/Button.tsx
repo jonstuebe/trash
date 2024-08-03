@@ -24,6 +24,8 @@ export function Button({
           borderWidth: 2,
           borderColor: disabled
             ? colorByMode("gray200", "gray700")
+            : state.pressed
+            ? colorByMode("blue600", "blue700")
             : colorByMode("blue700", "blue800"),
 
           borderRadius: 12,
@@ -48,7 +50,9 @@ export function Button({
               textAlign: "center",
               color: disabled
                 ? colorByMode("gray400", "gray600")
-                : colorByMode("blue700", "blue600"),
+                : pressed
+                ? colorByMode("blue600", "blue700")
+                : colorByMode("blue700", "blue800"),
             },
             size === "small"
               ? {

@@ -106,6 +106,9 @@ export const Game: React.FC = observer(() => {
               onPress={() => {
                 resetGame();
               }}
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.75 : 1,
+              })}
             >
               <Ionicons
                 name="refresh-circle"
@@ -134,21 +137,19 @@ export const Game: React.FC = observer(() => {
               top: -100,
             }}
           >
-            <Pressable>
-              <CardVStack>
-                {gameState.discardPile.get().map((card, index) => (
-                  <Card
-                    key={index}
-                    {...card}
-                    // faceup only for last item in discard pile
-                    faceUp={index === gameState.discardPile.get().length - 1}
-                    style={{
-                      width: 40,
-                    }}
-                  />
-                ))}
-              </CardVStack>
-            </Pressable>
+            <CardVStack>
+              {gameState.discardPile.get().map((card, index) => (
+                <Card
+                  key={index}
+                  {...card}
+                  // faceup only for last item in discard pile
+                  faceUp={index === gameState.discardPile.get().length - 1}
+                  style={{
+                    width: 40,
+                  }}
+                />
+              ))}
+            </CardVStack>
           </Motion.View>
         </AnimatePresence>
       </View>
