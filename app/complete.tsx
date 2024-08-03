@@ -18,7 +18,12 @@ export default function Complete() {
   const confettiRef = useRef<Confetti>(null);
 
   useEffect(() => {
-    confettiRef.current?.startConfetti();
+    const winner = gameState.players.find((player) =>
+      player.layout.every((card) => card === null)
+    );
+    if (winner && !winner.isBot) {
+      confettiRef.current?.startConfetti();
+    }
   }, []);
 
   return (
