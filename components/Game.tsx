@@ -163,6 +163,7 @@ export const Game: React.FC = observer(() => {
                   faceUp={card.faceUp}
                   onPressCard={() => playCardState(index)}
                   disabled={isCurrentPlayerBot}
+                  isBot={isCurrentPlayerBot}
                 />
               ) : (
                 <Card key={index} suit="hearts" rank="A" faceUp={false} />
@@ -186,6 +187,7 @@ export const Game: React.FC = observer(() => {
                     )
                   }
                   disabled={isCurrentPlayerBot}
+                  isBot={isCurrentPlayerBot}
                 />
               ) : (
                 <Card

@@ -1,5 +1,6 @@
-import React, { ReactElement } from "react";
+import React, { ReactElement, useEffect, useRef } from "react";
 import {
+  Animated,
   LayoutChangeEvent,
   Pressable,
   StyleProp,
@@ -36,24 +37,13 @@ const suits: Record<Suit, SuitInfo> = {
   spades: { symbol: "♠", color: "black" },
 };
 
-function Hexagons() {
-  const { colors } = useColors();
-
-  return (
-    <Svg width={28} height={49} viewBox="0 0 28 49">
-      <Path
-        fillRule="nonzero"
-        d="m13.99 9.25 13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9zM0 15l12.98-7.5V0h-2v6.35L0 12.69v2.3zm0 18.5L12.98 41v8h-2v-6.85L0 35.81v-2.3zM15 0v7.5L27.99 15H28v-2.31h-.01L17 6.35V0h-2zm0 49v-8l12.99-7.5H28v2.31h-.01L17 42.15V49h-2z"
-        fill={colors.gray300}
-      />
-    </Svg>
-  );
-}
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export interface CardProps extends CardType {
-  style?: StyleProp<ViewStyle>;
-  onPressCard?: (card: CardType) => void;
   disabled?: boolean;
+  onPressCard?: (card: CardType) => void;
+  isBot?: boolean;
+  style?: StyleProp<ViewStyle>;
 }
 
 export type CardHandle = {
@@ -66,6 +56,7 @@ export function Card({
   rank,
   faceUp,
   onPressCard,
+  isBot,
   disabled,
   style,
 }: CardProps): ReactElement {
@@ -75,18 +66,42 @@ export function Card({
   const { symbol, color } = suits[suit];
   const cardColor =
     typeof color === "string" ? colors[color] : colors[color[mode]];
+  const borderAnimation = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isBot && faceUp) {
+      Animated.timing(borderAnimation, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: false,
+      }).start(() => {
+        Animated.timing(borderAnimation, {
+          toValue: 0,
+          duration: 350,
+          useNativeDriver: false,
+        }).start();
+      });
+    }
+  }, [suit, rank, isBot]);
 
   return (
-    <Pressable
+    <AnimatedPressable
       onLayout={onLayout}
       disabled={disabled}
-      onPress={() => onPressCard?.({ suit, rank, faceUp })}
+      onPress={() => {
+        onPressCard?.({ suit, rank, faceUp });
+      }}
       style={[
         {
           aspectRatio: cardAspectRatio,
           flex: 1,
           backgroundColor: colors.white,
           borderRadius: layout?.width * 0.2,
+          borderWidth: 4,
+          borderColor: borderAnimation.interpolate({
+            inputRange: [0, 1],
+            outputRange: [colors.white, colors.darkBlue],
+          }),
         },
         {
           shadowColor: colors.black,
@@ -133,13 +148,13 @@ export function Card({
         <View
           style={{
             flex: 1,
-            margin: layout.width * 0.1,
+            margin: layout.width * 0.05,
             backgroundColor: colors.gray100,
             borderRadius: layout.width * 0.2,
             overflow: "hidden",
           }}
         />
       )}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
