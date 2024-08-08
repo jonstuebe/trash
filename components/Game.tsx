@@ -1,12 +1,14 @@
+import { Ionicons } from "@expo/vector-icons";
 import { AnimatePresence, Motion } from "@legendapp/motion";
 import { observer } from "@legendapp/state/react";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React, { useEffect } from "react";
 import { Dimensions, Pressable, Text, View } from "react-native";
 import { useColors } from "../colors";
+import { emitter } from "../emitter";
 import { botTurn, isGameOver } from "../logic/game";
 import {
-  checkPlayerWinner,
   discardCardState,
   drawCardState,
   gameState,
@@ -16,10 +18,9 @@ import {
 import { Button } from "./Button";
 import { Card, cardAspectRatio } from "./Card";
 import { CardHStack, CardVStack } from "./CardStack";
-import { HStack, VStack } from "./Stack";
-import { Ionicons } from "@expo/vector-icons";
 import { Shake, useShake } from "./Shake";
-import { emitter } from "../emitter";
+import { HStack, VStack } from "./Stack";
+import { usePrevious } from "../hooks/usePrevious";
 
 export const Game: React.FC = observer(() => {
   const router = useRouter();
@@ -51,6 +52,18 @@ export const Game: React.FC = observer(() => {
       }, 1500);
     }
   }, [isCurrentPlayerBot, currentPlayerIndex, currentDrawnCard]);
+
+  const previousPlayerIndex = usePrevious(currentPlayerIndex);
+  useEffect(() => {
+    // when the user changes from a bot to a human
+    if (
+      previousPlayerIndex &&
+      previousPlayerIndex !== currentPlayerIndex &&
+      !isCurrentPlayerBot
+    ) {
+      Haptics.selectionAsync();
+    }
+  }, [currentPlayerIndex, previousPlayerIndex]);
 
   return (
     <View style={{ flex: 1, justifyContent: "space-between" }}>
@@ -100,6 +113,12 @@ export const Game: React.FC = observer(() => {
           </HStack>
           <View>
             <Pressable
+              onPressIn={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+              onPressOut={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
               onPress={() => {
                 resetGame();
               }}

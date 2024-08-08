@@ -1,6 +1,7 @@
 import { PressableProps, Pressable } from "react-native";
 import { useColors } from "../colors";
 import { ThemedText } from "./ThemedText";
+import * as Haptics from "expo-haptics";
 
 export interface ButtonProps extends Omit<PressableProps, "children"> {
   title: string;
@@ -41,6 +42,12 @@ export function Button({
             },
         typeof style === "function" ? style(state) : style,
       ]}
+      onPressIn={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }}
+      onPressOut={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }}
       {...props}
     >
       {({ pressed }) => (

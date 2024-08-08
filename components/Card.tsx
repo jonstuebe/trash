@@ -1,4 +1,4 @@
-import React, { ReactElement, useEffect, useRef } from "react";
+import React, { ReactElement } from "react";
 import {
   Animated,
   LayoutChangeEvent,
@@ -9,11 +9,11 @@ import {
   ViewStyle,
   useColorScheme,
 } from "react-native";
-import { Line, Path, Svg } from "react-native-svg";
 import { Colors, useColors } from "../colors";
 import { useLayout } from "../hooks/useLayout";
 import { Card as CardType, Rank, Suit } from "../types";
-import { HStack, VStack } from "./Stack";
+import { VStack } from "./Stack";
+import * as Haptics from "expo-haptics";
 
 interface SuitInfo {
   symbol: string;
@@ -66,28 +66,17 @@ export function Card({
   const { symbol, color } = suits[suit];
   const cardColor =
     typeof color === "string" ? colors[color] : colors[color[mode]];
-  const borderAnimation = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (isBot && faceUp) {
-      Animated.timing(borderAnimation, {
-        toValue: 1,
-        duration: 350,
-        useNativeDriver: false,
-      }).start(() => {
-        Animated.timing(borderAnimation, {
-          toValue: 0,
-          duration: 350,
-          useNativeDriver: false,
-        }).start();
-      });
-    }
-  }, [suit, rank, isBot]);
 
   return (
     <AnimatedPressable
       onLayout={onLayout}
       disabled={disabled}
+      onPressIn={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }}
+      onPressOut={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }}
       onPress={() => {
         onPressCard?.({ suit, rank, faceUp });
       }}
@@ -98,10 +87,7 @@ export function Card({
           backgroundColor: colors.white,
           borderRadius: layout?.width * 0.2,
           borderWidth: 4,
-          borderColor: borderAnimation.interpolate({
-            inputRange: [0, 1],
-            outputRange: [colors.white, colors.darkBlue],
-          }),
+          borderColor: colors.white,
         },
         {
           shadowColor: colors.black,
