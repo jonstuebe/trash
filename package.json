@@ -11,6 +11,7 @@
     "test": "jest --watchAll",
     "lint": "expo lint",
     "build:prod": "eas build --profile production --platform ios --auto-submit",
+    "build-local:prod": "eas build --profile production --platform ios --local",
     "update:prod": "eas update --branch production"
   },
   "jest": {
