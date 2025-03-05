@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "buildNumber": "12",
+      "buildNumber": "13",
       "bundleIdentifier": "com.jonstuebe.trash"
     },
     "android": {
