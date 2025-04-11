@@ -14,8 +14,11 @@
     },
     "ios": {
       "supportsTablet": false,
-      "buildNumber": "13",
-      "bundleIdentifier": "com.jonstuebe.trash"
+      "buildNumber": "14",
+      "bundleIdentifier": "com.jonstuebe.trash",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
