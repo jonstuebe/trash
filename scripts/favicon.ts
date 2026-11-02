@@ -1,12 +1,12 @@
-// Builds public/favicon.ico from public/favicon.svg, for browsers that don't
+// Builds public/favicon-v2.ico from public/favicon-v2.svg, for browsers that don't
 // use SVG favicons (Safari). Run `bun run favicon` after editing the SVG and
 // commit the result. The app and install icons come from public/icon.svg via
 // vite-plugin-pwa at build time instead.
 
 import sharp from 'sharp'
 
-const SOURCE = 'public/favicon.svg'
-const OUTPUT = 'public/favicon.ico'
+const SOURCE = 'public/favicon-v2.svg'
+const OUTPUT = 'public/favicon-v2.ico'
 const SIZES = [16, 32, 48]
 
 const pngs = await Promise.all(
