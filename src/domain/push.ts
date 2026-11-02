@@ -1,4 +1,4 @@
-import { Array, Option, Schema, pipe } from 'effect'
+import { Array, Option, Result, Schema, pipe } from 'effect'
 
 import { type Game, Phase } from './game'
 
@@ -96,6 +96,34 @@ export const alertsFor = (
   const wasOver = Option.exists(maybeBefore, before =>
     Phase.guards.GameOver(before.phase),
   )
+
+  const wasEnded = Option.exists(maybeBefore, before =>
+    Phase.guards.Ended(before.phase),
+  )
+
+  if (Phase.guards.Ended(after.phase) && !wasEnded) {
+    const { enderIndex, maybeWinnerIndex } = after.phase
+    const enderName = Array.getUnsafe(after.players, enderIndex).name
+    return pipe(
+      after.players,
+      Array.filterMap((_player, seat) =>
+        seat === enderIndex
+          ? Result.failVoid
+          : Result.succeed({
+              seat,
+              title: 'Game over',
+              body: `${enderName} ended the game. ${Option.match(
+                maybeWinnerIndex,
+                {
+                  onNone: () => "It's a tie.",
+                  onSome: winnerIndex =>
+                    winnerIndex === seat ? 'You win!' : `${enderName} wins.`,
+                },
+              )}`,
+            }),
+      ),
+    )
+  }
 
   if (Phase.guards.GameOver(after.phase) && !wasOver) {
     const winnerIndex = after.phase.winnerIndex

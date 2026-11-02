@@ -67,6 +67,7 @@ export const Message = defineMessageUnion({
     stock: Schema.Array(Card),
   },
   ClickedNextRound: {},
+  ClickedEndGame: {},
   ClickedPlayAgain: {},
   ClickedLeaveTable: {},
   CompletedGenerateRoomCode: { code: Schema.String },

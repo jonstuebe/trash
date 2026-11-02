@@ -13,6 +13,7 @@ import {
   completeReshuffle,
   deal,
   drawFromStock,
+  endGame,
   isComplete,
   newBotGame,
   newFriendGame,
@@ -205,6 +206,42 @@ describe('ending a round', () => {
     const over = botStep(botStep(finished))
 
     expect(over.phase).toEqual(Phase.GameOver({ winnerIndex: 0 }))
+  })
+})
+
+describe('endGame', () => {
+  const roundOver = (
+    targets: ReadonlyArray<number>,
+    finisherIndexes: ReadonlyArray<number>,
+  ) =>
+    modifyFields(playing({}), {
+      players: players =>
+        Array.map(players, (player, index) =>
+          modifyFields(player, {
+            target: () => Array.getUnsafe(targets, index),
+          }),
+        ),
+      phase: () => Phase.RoundOver({ finisherIndexes }),
+    })
+
+  test('whoever has fewer cards to play next round wins', () => {
+    const ended = endGame(roundOver([5, 5], [1]), 0)
+
+    expect(ended.phase).toEqual(
+      Phase.Ended({ enderIndex: 0, maybeWinnerIndex: Option.some(1) }),
+    )
+    expect(Array.map(ended.players, player => player.target)).toEqual([5, 4])
+  })
+
+  test('an even count is a tie', () => {
+    expect(endGame(roundOver([6, 7], [1]), 1).phase).toEqual(
+      Phase.Ended({ enderIndex: 1, maybeWinnerIndex: Option.none() }),
+    )
+  })
+
+  test('only between rounds', () => {
+    const game = playing({})
+    expect(endGame(game, 0)).toBe(game)
   })
 })
 

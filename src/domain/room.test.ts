@@ -207,6 +207,35 @@ describe('applyMove', () => {
   })
 })
 
+describe('ending the game', () => {
+  test('either player can end it between rounds, and nobody can rematch', () => {
+    const game = gameOf(startedRoom())
+    const end = { sequence: game.sequence, move: Move.EndGame() }
+
+    expect(applyMove(game, GUEST_SEAT, end, unshuffled)).toBe(game)
+
+    const roundOver = modifyFields(game, {
+      phase: () => Phase.RoundOver({ finisherIndexes: [HOST_SEAT] }),
+    })
+    const ended = applyMove(roundOver, GUEST_SEAT, end, unshuffled)
+
+    expect(ended.phase).toEqual(
+      Phase.Ended({
+        enderIndex: GUEST_SEAT,
+        maybeWinnerIndex: Option.some(HOST_SEAT),
+      }),
+    )
+    expect(
+      applyMove(
+        ended,
+        HOST_SEAT,
+        { sequence: ended.sequence, move: Move.Rematch() },
+        unshuffled,
+      ),
+    ).toBe(ended)
+  })
+})
+
 describe('viewOf', () => {
   test('never sends a face-down card', () => {
     const view = viewOf(startedRoom())
@@ -350,6 +379,12 @@ describe('summaryOf', () => {
     expect(summaryOf(over, HOST)).toEqual(
       GameSummary.Over({ opponentName: 'Alex', didWin: false }),
     )
+    const ended = at(
+      Phase.Ended({ enderIndex: HOST_SEAT, maybeWinnerIndex: Option.none() }),
+    )
+    expect(summaryOf(ended, GUEST)).toEqual(
+      GameSummary.Ended({ opponentName: 'Sam', round: 1, outcome: 'Tied' }),
+    )
   })
 })
 
@@ -387,5 +422,18 @@ describe('lifetimeOf', () => {
         ),
     })
     expect(lifetimeOf(finished)).toEqual(FINISHED_GAME_LIFETIME)
+    const ended = modifyFields(startedRoom(), {
+      maybeGame: maybeGame =>
+        Option.map(maybeGame, game =>
+          modifyFields(game, {
+            phase: () =>
+              Phase.Ended({
+                enderIndex: HOST_SEAT,
+                maybeWinnerIndex: Option.none(),
+              }),
+          }),
+        ),
+    })
+    expect(lifetimeOf(ended)).toEqual(FINISHED_GAME_LIFETIME)
   })
 })

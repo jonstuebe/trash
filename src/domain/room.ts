@@ -10,6 +10,7 @@ import {
   completeReshuffle,
   deal,
   drawFromStock,
+  endGame,
   isViewerTurn,
   newFriendGame,
   nextRound,
@@ -72,6 +73,7 @@ export const Move = defineTaggedUnion({
   Place: { slotIndex: Schema.Number },
   Trash: {},
   NextRound: {},
+  EndGame: {},
   Rematch: {},
 })
 export type Move = typeof Move.Type
@@ -274,6 +276,7 @@ export const applyMove = (
       onTurn(seat, current => placeHeld(current, slotIndex))(game),
     Trash: () => onTurn(seat, trashHeld)(game),
     NextRound: () => nextRound(game),
+    EndGame: () => endGame(game, seat),
     Rematch: () =>
       Phase.guards.GameOver(game.phase)
         ? modifyFields(newFriendGame(), {
@@ -302,6 +305,11 @@ export const GameSummary = defineTaggedUnion({
   TheirTurn: { opponentName: Schema.String, round: Schema.Number },
   BetweenRounds: { opponentName: Schema.String, round: Schema.Number },
   Over: { opponentName: Schema.String, didWin: Schema.Boolean },
+  Ended: {
+    opponentName: Schema.String,
+    round: Schema.Number,
+    outcome: Schema.Literals(['Won', 'Lost', 'Tied']),
+  },
 })
 export type GameSummary = typeof GameSummary.Type
 
@@ -331,6 +339,17 @@ export const summaryOf = (
                 otherSeat(seatIndex),
               ).name
               const round = game.round
+              if (Phase.guards.Ended(game.phase)) {
+                return GameSummary.Ended({
+                  opponentName,
+                  round,
+                  outcome: Option.match(game.phase.maybeWinnerIndex, {
+                    onNone: () => 'Tied',
+                    onSome: winnerIndex =>
+                      winnerIndex === seatIndex ? 'Won' : 'Lost',
+                  }),
+                })
+              }
               if (Phase.guards.GameOver(game.phase)) {
                 return GameSummary.Over({
                   opponentName,
@@ -383,7 +402,7 @@ export const lifetimeOf = (room: Room): Duration.Duration =>
   Option.match(room.maybeGame, {
     onNone: () => UNJOINED_INVITE_LIFETIME,
     onSome: game =>
-      Phase.guards.GameOver(game.phase)
+      Phase.guards.GameOver(game.phase) || Phase.guards.Ended(game.phase)
         ? FINISHED_GAME_LIFETIME
         : IDLE_GAME_LIFETIME,
   })
