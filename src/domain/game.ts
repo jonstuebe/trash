@@ -66,15 +66,15 @@ export const STARTING_TARGET = 10
 
 type Persona = Readonly<{ name: string; avatar: string; accent: string }>
 
-const HUMAN: Persona = { name: 'You', avatar: '😎', accent: '#0A84FF' }
+const YOU: Persona = { name: 'You', avatar: '😎', accent: '#0A84FF' }
 
-export const BOTS: ReadonlyArray<Persona> = [
-  { name: 'Mira', avatar: '🦊', accent: '#FF9F0A' },
-  { name: 'Otis', avatar: '🐻', accent: '#BF5AF2' },
-  { name: 'Pip', avatar: '🐸', accent: '#30D158' },
-]
+const BOT: Persona = { name: 'Mira', avatar: '🦊', accent: '#FF9F0A' }
 
-export const MAX_OPPONENTS = BOTS.length
+// A friend game seats the host first. Every device shows its own seat as
+// "You", so these names are only ever shown for the other player.
+const HOST: Persona = { name: 'Friend', avatar: '😎', accent: '#0A84FF' }
+
+const GUEST: Persona = { name: 'Friend', avatar: '🦊', accent: '#FF9F0A' }
 
 const makePlayer = (persona: Persona, seat: Seat): Player => ({
   ...persona,
@@ -84,14 +84,9 @@ const makePlayer = (persona: Persona, seat: Seat): Player => ({
   lastAction: LastAction.Idle(),
 })
 
-export const newGame = (opponentCount: number): Game => ({
+const newGameWith = (players: ReadonlyArray<Player>): Game => ({
   round: 1,
-  players: [
-    makePlayer(HUMAN, 'Human'),
-    ...Array.map(Array.take(BOTS, opponentCount), bot =>
-      makePlayer(bot, 'Bot'),
-    ),
-  ],
+  players,
   stock: [],
   discard: [],
   currentIndex: 0,
@@ -99,6 +94,12 @@ export const newGame = (opponentCount: number): Game => ({
   phase: Phase.Shuffling(),
   sequence: 0,
 })
+
+export const newBotGame = (): Game =>
+  newGameWith([makePlayer(YOU, 'Human'), makePlayer(BOT, 'Bot')])
+
+export const newFriendGame = (): Game =>
+  newGameWith([makePlayer(HOST, 'Human'), makePlayer(GUEST, 'Human')])
 
 // QUERIES
 
@@ -167,6 +168,34 @@ export const canTakeDiscard = (game: Game): boolean =>
 
 export const isHumanTurn = (game: Game): boolean =>
   currentPlayer(game).seat === 'Human'
+
+// The viewer is the seat this device plays. A bot game always seats the
+// person at 0; a friend game seats the host at 0 and the guest at 1.
+export const isViewerTurn = (game: Game, viewer: number): boolean =>
+  game.currentIndex === viewer && currentPlayer(game).seat === 'Human'
+
+// HIDDEN CARDS
+
+const UNKNOWN_CARD: Card = { id: -1, rank: 0, suit: 'Spades' }
+
+// What a player may see: face-down cards and the draw pile become blanks. The
+// rules only look at whether a slot is face down, never at what's under it,
+// so a redacted Game still answers every query the view asks.
+export const redact = (game: Game): Game =>
+  modifyFields(game, {
+    players: players =>
+      Array.map(players, player =>
+        modifyFields(player, {
+          slots: slots =>
+            Array.map(slots, slot =>
+              Slot.guards.Hidden(slot)
+                ? Slot.Hidden({ card: UNKNOWN_CARD })
+                : slot,
+            ),
+        }),
+      ),
+    stock: stock => Array.map(stock, () => UNKNOWN_CARD),
+  })
 
 // TRANSITIONS
 

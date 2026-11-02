@@ -1,4 +1,6 @@
-import { defineConfig } from 'cf/config'
+import { bindings, defineConfig, exports } from 'cf/config'
+
+import * as entrypoint from './worker/index.ts' with { type: 'cf-worker' }
 
 export default defineConfig({
   worker: {
@@ -14,8 +16,24 @@ export default defineConfig({
     observability: {
       enabled: true,
     },
+    // The Worker only serves friend games. Everything else, including bot
+    // games, is static assets that the service worker caches for offline play.
+    entrypoint,
+    // The Worker reaches Room through ctx.exports, not an env binding. A
+    // binding names the Worker (script_name), which may point a preview at
+    // production's rooms; ctx.exports gets each preview its own storage.
+    exports: {
+      Room: exports.durableObject({ storage: 'sqlite' }),
+    },
+    env: {
+      // Signs turn alerts (Web Push). Set it with
+      // `npx wrangler secret put VAPID_PRIVATE_KEY --name trash`; locally it
+      // comes from .dev.vars. See scripts/vapid.ts.
+      VAPID_PRIVATE_KEY: bindings.secret(),
+    },
     assets: {
       notFoundHandling: 'single-page-application',
+      runWorkerFirst: ['/api/*'],
     },
   },
 })

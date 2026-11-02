@@ -1,13 +1,13 @@
 # Trash
 
-The card game Trash (also called Garbage), as an installable PWA with an iOS-style glass interface. You play against one to three bots.
+The card game Trash (also called Garbage), as an installable PWA with an iOS-style glass interface. Play a bot offline, or invite a friend with a link and take turns whenever you like.
 
 Built with [Foldkit](https://foldkit.dev) (Effect + the Elm Architecture), Vite and `vite-plugin-pwa`.
 
 ```bash
 bun install
 bun dev          # http://localhost:5173
-bun run test     # rules tests
+bun run test     # rules and update tests
 bun run build    # production build with service worker and icons
 bun run preview  # serve the build
 ```
