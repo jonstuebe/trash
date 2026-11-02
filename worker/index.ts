@@ -163,7 +163,7 @@ export class Room extends DurableObject<Env> {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, _env, ctx) {
     const url = new URL(request.url)
     const match = SOCKET_PATH.exec(url.pathname)
     const code = match?.[1]
@@ -175,7 +175,8 @@ export default {
       return new Response('Expected a WebSocket', { status: 426 })
     }
 
-    const room = env.ROOMS.get(env.ROOMS.idFromName(code))
+    const rooms = ctx.exports.Room
+    const room = rooms.get(rooms.idFromName(code))
     return room.fetch(request)
   },
 } satisfies ExportedHandler<Env>

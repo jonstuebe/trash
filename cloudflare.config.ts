@@ -1,4 +1,4 @@
-import { bindings, defineConfig, exports } from 'cf/config'
+import { defineConfig, exports } from 'cf/config'
 
 import * as entrypoint from './worker/index.ts' with { type: 'cf-worker' }
 
@@ -19,11 +19,11 @@ export default defineConfig({
     // The Worker only serves friend games. Everything else, including bot
     // games, is static assets that the service worker caches for offline play.
     entrypoint,
+    // The Worker reaches Room through ctx.exports, not an env binding. A
+    // binding names the Worker (script_name), which may point a preview at
+    // production's rooms; ctx.exports gets each preview its own storage.
     exports: {
       Room: exports.durableObject({ storage: 'sqlite' }),
-    },
-    env: {
-      ROOMS: bindings.durableObject({ worker: 'trash', exportName: 'Room' }),
     },
     assets: {
       notFoundHandling: 'single-page-application',
