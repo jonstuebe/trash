@@ -45,7 +45,12 @@ import {
   ServerMessage,
   roomPath,
 } from './domain/room'
-import { type AlertsOutcome, Message, type ShareOutcome } from './message'
+import {
+  type AlertsOutcome,
+  type AlertsPermission,
+  Message,
+  type ShareOutcome,
+} from './message'
 import {
   AppUpdate,
   Connection,
@@ -61,7 +66,7 @@ import {
 } from './model'
 import { RoomSocket, type RoomSocketService } from './roomSocket'
 import { forgetFriendGame, saveFriendGame } from './storage'
-import { enableTurnAlerts, registerTurnAlerts } from './turnAlerts'
+import { registerTurnAlerts } from './turnAlerts'
 
 export { Message } from './message'
 export { Flags, Model } from './model'
@@ -253,15 +258,6 @@ export const ShareInvite = Command.define('ShareInvite', {
         return 'Failed'
       }
     }).pipe(Effect.map(outcome => Message.CompletedShareInvite({ outcome }))),
-})
-
-export const EnableTurnAlerts = Command.define('EnableTurnAlerts', {
-  args: { code: Schema.String, deviceId: Schema.String },
-  messages: [Message.CompletedEnableAlerts],
-  execute: ({ code, deviceId }) =>
-    enableTurnAlerts(code, deviceId).pipe(
-      Effect.map(outcome => Message.CompletedEnableAlerts({ outcome })),
-    ),
 })
 
 export const RegisterTurnAlerts = Command.define('RegisterTurnAlerts', {
@@ -540,6 +536,34 @@ const turnAlertsAfter = (outcome: AlertsOutcome): TurnAlerts =>
     Match.orElse(() => TurnAlerts.Off()),
   )
 
+const afterPermission = (
+  model: Model,
+  permission: AlertsPermission,
+): UpdateReturn => {
+  if (permission !== 'granted') {
+    return {
+      model: modifyFields(model, {
+        turnAlerts: () =>
+          permission === 'denied' ? TurnAlerts.Blocked() : TurnAlerts.Off(),
+      }),
+    }
+  }
+  return Screen.matchOrElse(
+    model.screen,
+    {
+      Friend: screen => ({
+        model,
+        commands: [
+          RegisterTurnAlerts({ code: screen.code, deviceId: model.deviceId }),
+        ],
+      }),
+    },
+    () => ({
+      model: modifyFields(model, { turnAlerts: () => TurnAlerts.On() }),
+    }),
+  )
+}
+
 const inviteAfterShare = (outcome: ShareOutcome): Invite =>
   Match.value(outcome).pipe(
     Match.withReturnType<Invite>(),
@@ -748,6 +772,13 @@ export const update = (model: Model, message: Message) =>
     // moved since, so coming back to the app fetches the game again.
     ReturnedToApp: () => reconnect(model),
 
+    LeftApp: () =>
+      withFriendScreen(model, screen =>
+        FriendRoom.guards.Refused(screen.room)
+          ? { model }
+          : markDisconnected(model),
+      ),
+
     ClickedInvite: () =>
       withFriendScreen(model, screen => ({
         model: setInvite(model, Invite.Sharing()),
@@ -758,29 +789,20 @@ export const update = (model: Model, message: Message) =>
       model: setInvite(model, inviteAfterShare(outcome)),
     }),
 
+    // The button's Mount has already asked for permission (see
+    // AskForTurnAlerts); this only shows that it's waiting.
     ClickedTurnOnAlerts: () =>
-      withFriendScreen(model, screen =>
-        TurnAlerts.guards.Off(model.turnAlerts) ||
-        TurnAlerts.guards.Failed(model.turnAlerts)
-          ? {
-              model: modifyFields(model, {
-                turnAlerts: () => TurnAlerts.Asking(),
-              }),
-              commands: [
-                EnableTurnAlerts({
-                  code: screen.code,
-                  deviceId: model.deviceId,
-                }),
-              ],
-            }
-          : { model },
-      ),
+      TurnAlerts.guards.Off(model.turnAlerts) ||
+      TurnAlerts.guards.Failed(model.turnAlerts)
+        ? {
+            model: modifyFields(model, {
+              turnAlerts: () => TurnAlerts.Asking(),
+            }),
+          }
+        : { model },
 
-    CompletedEnableAlerts: ({ outcome }) => ({
-      model: modifyFields(model, {
-        turnAlerts: () => turnAlertsAfter(outcome),
-      }),
-    }),
+    AnsweredAlertsPrompt: ({ permission }) =>
+      afterPermission(model, permission),
 
     CompletedRegisterAlerts: ({ outcome }) => ({
       model: modifyFields(model, {

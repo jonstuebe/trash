@@ -1,11 +1,12 @@
-import { Duration, Effect, Option, Schema } from 'effect'
+import { Duration, Effect, Option, Queue, Schema, Stream } from 'effect'
+import { Mount } from 'foldkit'
 
 import {
   PushRegistrationJson,
   PushSubscription,
   VAPID_PUBLIC_KEY,
 } from './domain/push'
-import type { AlertsOutcome } from './message'
+import { type AlertsOutcome, Message } from './message'
 import { TurnAlerts } from './model'
 
 // The browser side of turn alerts: asking for permission, subscribing this
@@ -81,19 +82,38 @@ export const registerTurnAlerts = (
     return response.ok ? 'On' : 'Failed'
   }).pipe(Effect.catch(() => Effect.succeed<AlertsOutcome>('Failed')))
 
-// Asks for permission (iOS only allows this from a tap), then registers.
-export const enableTurnAlerts = (
-  code: string,
-  deviceId: string,
-): Effect.Effect<AlertsOutcome> =>
-  Effect.tryPromise(() => Notification.requestPermission()).pipe(
-    Effect.flatMap(permission => {
-      if (permission === 'granted') {
-        return registerTurnAlerts(code, deviceId)
-      }
-      return Effect.succeed<AlertsOutcome>(
-        permission === 'denied' ? 'Blocked' : 'Off',
-      )
-    }),
-    Effect.catch(() => Effect.succeed<AlertsOutcome>('Failed')),
-  )
+type AlertsPromptMessage =
+  | typeof Message.ClickedTurnOnAlerts.Type
+  | typeof Message.AnsweredAlertsPrompt.Type
+
+// The "Alert me" button. iOS only shows the permission prompt while it's
+// handling a tap, and a Command runs after the tap is over, so the request
+// happens here in the click listener itself.
+export const AskForTurnAlerts = Mount.defineStream('AskForTurnAlerts', {
+  messages: [Message.ClickedTurnOnAlerts, Message.AnsweredAlertsPrompt],
+  execute: ({ element }) =>
+    Stream.callback<AlertsPromptMessage>(queue =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const onClick = () => {
+            Queue.offerUnsafe(queue, Message.ClickedTurnOnAlerts())
+            Notification.requestPermission().then(
+              permission =>
+                Queue.offerUnsafe(
+                  queue,
+                  Message.AnsweredAlertsPrompt({ permission }),
+                ),
+              () =>
+                Queue.offerUnsafe(
+                  queue,
+                  Message.AnsweredAlertsPrompt({ permission: 'default' }),
+                ),
+            )
+          }
+          element.addEventListener('click', onClick)
+          return () => element.removeEventListener('click', onClick)
+        }),
+        release => Effect.sync(release),
+      ).pipe(Effect.andThen(Effect.never)),
+    ),
+})

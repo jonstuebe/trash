@@ -11,7 +11,6 @@ import { newFriendGame } from './domain/game'
 import { Move, RoomView, ServerMessage, settle } from './domain/room'
 import {
   ApplyAppUpdate,
-  EnableTurnAlerts,
   ForgetFriendGame,
   GenerateRoomCode,
   Message,
@@ -356,27 +355,58 @@ describe('update', () => {
         }),
       )
     })
-    test('turning on alerts asks for permission and hands the room the subscription', () => {
+    test('turning on alerts registers this device once permission is granted', () => {
       story(
         update,
         given(seatedAt(1)),
         message(Message.ClickedTurnOnAlerts()),
-        Command.expectExact(
-          EnableTurnAlerts({ code: 'K7QXMP', deviceId: DEVICE_ID }),
-        ),
+        Command.expectNone(),
         model(next => {
           expect(TurnAlerts.guards.Asking(next.turnAlerts)).toBe(true)
         }),
-        Command.resolve(
-          EnableTurnAlerts,
-          Message.CompletedEnableAlerts({ outcome: 'Blocked' }),
+        message(Message.AnsweredAlertsPrompt({ permission: 'granted' })),
+        Command.expectExact(
+          RegisterTurnAlerts({ code: 'K7QXMP', deviceId: DEVICE_ID }),
         ),
+        Command.resolve(
+          RegisterTurnAlerts,
+          Message.CompletedRegisterAlerts({ outcome: 'On' }),
+        ),
+        model(next => {
+          expect(TurnAlerts.guards.On(next.turnAlerts)).toBe(true)
+        }),
+      )
+    })
+
+    test('a refused permission shows alerts as blocked', () => {
+      story(
+        update,
+        given(seatedAt(1)),
+        message(Message.ClickedTurnOnAlerts()),
+        message(Message.AnsweredAlertsPrompt({ permission: 'denied' })),
+        Command.expectNone(),
         model(next => {
           expect(TurnAlerts.guards.Blocked(next.turnAlerts)).toBe(true)
         }),
-        // Blocked in Settings: tapping again can't ask a second time.
-        message(Message.ClickedTurnOnAlerts()),
-        Command.expectNone(),
+      )
+    })
+
+    test('leaving the app drops the socket so the room can alert this player', () => {
+      story(
+        update,
+        given(seatedAt(0)),
+        message(Message.LeftApp()),
+        model(next => {
+          expect(
+            Connection.guards.Disconnected(friendScreenOf(next).connection),
+          ).toBe(true)
+        }),
+        message(Message.ReturnedToApp()),
+        model(next => {
+          expect(
+            Connection.guards.Connecting(friendScreenOf(next).connection),
+          ).toBe(true)
+        }),
       )
     })
 

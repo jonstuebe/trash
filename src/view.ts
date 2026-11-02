@@ -38,6 +38,7 @@ import {
   TurnAlerts,
 } from './model'
 import { DragSheetToDismiss } from './sheetGesture'
+import { AskForTurnAlerts } from './turnAlerts'
 
 type H = HtmlBuilder<Message>
 
@@ -1007,7 +1008,7 @@ const alertsButton = (turnAlerts: TurnAlerts, label: string, h: H): Html => {
       [
         h.Class('pill glass'),
         h.Disabled(isAsking),
-        h.OnClick(Message.ClickedTurnOnAlerts()),
+        h.OnMount(AskForTurnAlerts()),
       ],
       [bellIcon(h), isAsking ? 'Turning on…' : label],
     )

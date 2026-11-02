@@ -81,13 +81,19 @@ const isFriendSocketOpen = (model: Model): boolean =>
     () => false,
   )
 
+// Leaving the app drops the game's socket, so the Room knows this player
+// isn't looking and sends them a turn alert. Phones suspend a backgrounded
+// app without closing its sockets, which otherwise look open for minutes.
 const returnsToApp = Stream.callback<Message>(queue =>
   Effect.acquireRelease(
     Effect.sync(() => {
       const onVisibilityChange = () => {
-        if (document.visibilityState === 'visible') {
-          Queue.offerUnsafe(queue, Message.ReturnedToApp())
-        }
+        Queue.offerUnsafe(
+          queue,
+          document.visibilityState === 'visible'
+            ? Message.ReturnedToApp()
+            : Message.LeftApp(),
+        )
       }
       const onOnline = () => Queue.offerUnsafe(queue, Message.ReturnedToApp())
       document.addEventListener('visibilitychange', onVisibilityChange)
