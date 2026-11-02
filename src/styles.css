@@ -84,6 +84,14 @@ body {
   -webkit-touch-callout: none;
 }
 
+/* NOTE: a Home Screen app on iOS opens with a viewport one status bar
+   shorter than the screen, which left a black band along the bottom. The
+   viewport grows to fit a taller document, up to the screen's height, so the
+   body asks for that much. overflow: hidden keeps it from scrolling. */
+body {
+  min-height: calc(100vh + env(safe-area-inset-top));
+}
+
 button {
   font: inherit;
   color: inherit;
