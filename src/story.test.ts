@@ -3,6 +3,8 @@ import { Command, given, message, model, story } from 'foldkit/story'
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
 
+import { Dialog } from '@foldkit/ui'
+
 import { buildDeck } from './domain/card'
 import { type Game, Phase, deal, newGame } from './domain/game'
 import {
@@ -12,12 +14,13 @@ import {
   WaitBeforeBotStep,
   update,
 } from './main'
-import { Guide, Screen } from './model'
+import { GUIDE_DIALOG_ID, Screen } from './model'
 
 const atTable = (game: Game): Model => ({
   screen: Screen.Table({ game }),
   opponentCount: 1,
-  guide: Guide.Closed(),
+  guidePage: 0,
+  guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
 })
 
 const gameOf = (model: Model): Game =>
@@ -38,7 +41,8 @@ describe('update', () => {
       given<Model>({
         screen: Screen.Title(),
         opponentCount: 1,
-        guide: Guide.Closed(),
+        guidePage: 0,
+        guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
       }),
       message(Message.ClickedNewGame()),
       Command.expectHas(ShuffleDeck),
@@ -83,6 +87,49 @@ describe('update', () => {
       model(next => {
         expect(Phase.guards.Holding(gameOf(next).phase)).toBe(true)
       }),
+    )
+  })
+
+  test('the guide opens as a sheet and its last page starts a game', () => {
+    story(
+      update,
+      given<Model>({
+        screen: Screen.Title(),
+        opponentCount: 1,
+        guidePage: 2,
+        // The enter and leave transitions are the Dialog's business; this
+        // story is about the guide's paging.
+        guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID }),
+      }),
+      message(Message.ClickedHowToPlay()),
+      Command.expectHas(Dialog.ShowDialog),
+      model(next => {
+        expect(next.guideDialog.isOpen).toBe(true)
+        expect(next.guidePage).toBe(0)
+      }),
+      Command.resolveAll([
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
+      ]),
+      message(Message.ClickedGuideNext()),
+      message(Message.ClickedGuideNext()),
+      model(next => {
+        expect(next.guidePage).toBe(2)
+        expect(Screen.guards.Title(next.screen)).toBe(true)
+      }),
+      message(Message.ClickedGuideNext()),
+      Command.expectHas(Dialog.CloseDialog, ShuffleDeck),
+      model(next => {
+        expect(next.guideDialog.isOpen).toBe(false)
+        expect(Screen.guards.Table(next.screen)).toBe(true)
+      }),
+      Command.resolveAll(
+        [Dialog.CloseDialog, Dialog.Message.CompletedCloseDialog()],
+        [
+          ShuffleDeck,
+          Message.CompletedShuffleDeck({ sequence: 0, deck: buildDeck(1) }),
+        ],
+      ),
     )
   })
 

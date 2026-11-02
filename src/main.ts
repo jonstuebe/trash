@@ -1,6 +1,8 @@
-import { Duration, Effect, Random, Schema } from 'effect'
-import { Command, Runtime, type Update } from 'foldkit'
+import { Duration, Effect, Option, Random, Schema } from 'effect'
+import { Command, Runtime, Update } from 'foldkit'
 import { modifyFields } from 'foldkit/struct'
+
+import { Dialog } from '@foldkit/ui'
 
 import { Card, buildDeck, deckCountFor } from './domain/card'
 import {
@@ -22,7 +24,7 @@ import {
   trashHeld,
 } from './domain/game'
 import { Message } from './message'
-import { GUIDE_PAGE_COUNT, Guide, Model, Screen } from './model'
+import { GUIDE_DIALOG_ID, GUIDE_PAGE_COUNT, Model, Screen } from './model'
 
 export { Message } from './message'
 export { Model } from './model'
@@ -36,7 +38,8 @@ export const init: Runtime.ApplicationInit<Model, Message> = () => ({
   model: {
     screen: Screen.Title(),
     opponentCount: 2,
-    guide: Guide.Closed(),
+    guidePage: 0,
+    guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
   },
 })
 
@@ -101,12 +104,47 @@ const followUpCommands = (game: Game) =>
 
 // UPDATE
 
+const readGuideDialog = (model: Model) => Option.some(model.guideDialog)
+
+const writeGuideDialog = (model: Model, guideDialog: Dialog.Model): Model =>
+  modifyFields(model, { guideDialog: () => guideDialog })
+
+const toGotGuideDialogMessage = (message: Dialog.Message): Message =>
+  Message.GotGuideDialogMessage({ message })
+
+const ignoreGuideDialogOutMessage =
+  () =>
+  (model: Model): UpdateReturn => ({ model })
+
+const foldGuideDialog = Update.foldChild({
+  update: Dialog.update,
+  read: readGuideDialog,
+  write: writeGuideDialog,
+  toParentMessage: toGotGuideDialogMessage,
+  foldOutMessage: ignoreGuideDialogOutMessage,
+})
+
+const openGuide = Update.foldChildStep({
+  update: Dialog.open,
+  read: readGuideDialog,
+  write: writeGuideDialog,
+  toParentMessage: toGotGuideDialogMessage,
+  foldOutMessage: ignoreGuideDialogOutMessage,
+})
+
+const closeGuide = Update.foldChildStep({
+  update: Dialog.close,
+  read: readGuideDialog,
+  write: writeGuideDialog,
+  toParentMessage: toGotGuideDialogMessage,
+  foldOutMessage: ignoreGuideDialogOutMessage,
+})
+
 const startGame = (model: Model): UpdateReturn => {
   const game = newGame(model.opponentCount)
   return {
     model: modifyFields(model, {
       screen: () => Screen.Table({ game }),
-      guide: () => Guide.Closed(),
     }),
     commands: followUpCommands(game),
   }
@@ -154,42 +192,37 @@ export const update = (model: Model, message: Message) =>
 
     ClickedPlayAgain: () => startGame(model),
 
-    ClickedHowToPlay: () => ({
-      model: modifyFields(model, { guide: () => Guide.Open({ page: 0 }) }),
-    }),
+    ClickedHowToPlay: () =>
+      Update.combine(model, [
+        stepModel => ({
+          model: modifyFields(stepModel, { guidePage: () => 0 }),
+        }),
+        openGuide,
+      ]),
 
-    ClickedGuideNext: () =>
-      Guide.match(model.guide, {
-        Closed: () => ({ model }),
-        Open: ({ page }) => {
-          if (page + 1 < GUIDE_PAGE_COUNT) {
-            return {
-              model: modifyFields(model, {
-                guide: () => Guide.Open({ page: page + 1 }),
-              }),
-            }
-          }
-          return Screen.match(model.screen, {
-            Title: () => startGame(model),
-            Table: () => ({
-              model: modifyFields(model, { guide: () => Guide.Closed() }),
-            }),
-          })
-        },
-      }),
+    ClickedGuideNext: () => {
+      if (model.guidePage + 1 < GUIDE_PAGE_COUNT) {
+        return {
+          model: modifyFields(model, {
+            guidePage: () => model.guidePage + 1,
+          }),
+        }
+      }
+      return Screen.match(model.screen, {
+        Title: () => Update.combine(model, [closeGuide, startGame]),
+        Table: () => closeGuide(model),
+      })
+    },
 
     ClickedGuidePage: ({ page }) => ({
       model: modifyFields(model, {
-        guide: () =>
-          Guide.Open({
-            page: Math.min(GUIDE_PAGE_COUNT - 1, Math.max(0, page)),
-          }),
+        guidePage: () => Math.min(GUIDE_PAGE_COUNT - 1, Math.max(0, page)),
       }),
     }),
 
-    ClickedCloseGuide: () => ({
-      model: modifyFields(model, { guide: () => Guide.Closed() }),
-    }),
+    GotGuideDialogMessage: ({ message }) => foldGuideDialog(model, message),
+
+    SwipedDownGuide: () => closeGuide(model),
 
     CompletedShuffleDeck: ({ sequence, deck }) =>
       stepGame(
@@ -238,7 +271,6 @@ export const update = (model: Model, message: Message) =>
     ClickedLeaveTable: () => ({
       model: modifyFields(model, {
         screen: () => Screen.Title(),
-        guide: () => Guide.Closed(),
       }),
     }),
   })
