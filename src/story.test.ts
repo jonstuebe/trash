@@ -11,10 +11,12 @@ import { newFriendGame } from './domain/game'
 import { Move, RoomView, ServerMessage, settle } from './domain/room'
 import {
   ApplyAppUpdate,
+  EnableTurnAlerts,
   ForgetFriendGame,
   GenerateRoomCode,
   Message,
   type Model,
+  RegisterTurnAlerts,
   SaveFriendGame,
   SendMove,
   ShowUrl,
@@ -29,6 +31,7 @@ import {
   GUIDE_DIALOG_ID,
   Invite,
   Screen,
+  TurnAlerts,
 } from './model'
 
 const DEVICE_ID = 'device-0000-0000-0000'
@@ -40,6 +43,7 @@ const atTable = (game: Game): Model => ({
   guidePage: 0,
   guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
   appUpdate: AppUpdate.None(),
+  turnAlerts: TurnAlerts.Off(),
 })
 
 const gameOf = (model: Model): Game =>
@@ -70,6 +74,7 @@ describe('update', () => {
         guidePage: 0,
         guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
         appUpdate: AppUpdate.None(),
+        turnAlerts: TurnAlerts.Off(),
       }),
       message(Message.ClickedPlayBot()),
       Command.expectHas(ShuffleDeck),
@@ -153,6 +158,7 @@ describe('update', () => {
         // story is about the guide's paging.
         guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID }),
         appUpdate: AppUpdate.None(),
+        turnAlerts: TurnAlerts.Off(),
       }),
       message(Message.ClickedHowToPlay()),
       Command.expectHas(Dialog.ShowDialog),
@@ -208,6 +214,7 @@ describe('update', () => {
       guidePage: 0,
       guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
       appUpdate: AppUpdate.None(),
+      turnAlerts: TurnAlerts.Off(),
     })
 
     const friendGame = (): Game => settle(newFriendGame(), cards => cards)
@@ -346,6 +353,52 @@ describe('update', () => {
           expect(
             Connection.guards.Connecting(friendScreenOf(next).connection),
           ).toBe(true)
+        }),
+      )
+    })
+    test('turning on alerts asks for permission and hands the room the subscription', () => {
+      story(
+        update,
+        given(seatedAt(1)),
+        message(Message.ClickedTurnOnAlerts()),
+        Command.expectExact(
+          EnableTurnAlerts({ code: 'K7QXMP', deviceId: DEVICE_ID }),
+        ),
+        model(next => {
+          expect(TurnAlerts.guards.Asking(next.turnAlerts)).toBe(true)
+        }),
+        Command.resolve(
+          EnableTurnAlerts,
+          Message.CompletedEnableAlerts({ outcome: 'Blocked' }),
+        ),
+        model(next => {
+          expect(TurnAlerts.guards.Blocked(next.turnAlerts)).toBe(true)
+        }),
+        // Blocked in Settings: tapping again can't ask a second time.
+        message(Message.ClickedTurnOnAlerts()),
+        Command.expectNone(),
+      )
+    })
+
+    test('with alerts on, every connection re-registers this device', () => {
+      story(
+        update,
+        given({
+          ...seatedAt(0),
+          turnAlerts: TurnAlerts.On(),
+        }),
+        message(Message.DisconnectedRoomSocket()),
+        message(Message.ReturnedToApp()),
+        message(Message.ConnectedRoomSocket()),
+        Command.expectExact(
+          RegisterTurnAlerts({ code: 'K7QXMP', deviceId: DEVICE_ID }),
+        ),
+        Command.resolve(
+          RegisterTurnAlerts,
+          Message.CompletedRegisterAlerts({ outcome: 'Failed' }),
+        ),
+        model(next => {
+          expect(TurnAlerts.guards.Failed(next.turnAlerts)).toBe(true)
         }),
       )
     })

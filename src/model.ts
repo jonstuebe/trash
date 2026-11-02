@@ -52,6 +52,19 @@ export const Screen = defineTaggedUnion({
 })
 export type Screen = typeof Screen.Type
 
+// Whether this device gets a push notification when it's the player's turn
+// in a friend game. iPhones only allow it once Trash is on the Home Screen.
+export const TurnAlerts = defineTaggedUnion({
+  Unsupported: {},
+  NeedsHomeScreen: {},
+  Off: {},
+  Asking: {},
+  On: {},
+  Blocked: {},
+  Failed: {},
+})
+export type TurnAlerts = typeof TurnAlerts.Type
+
 // A new version of the app has installed in the background and is waiting
 // for the player to switch to it.
 export const AppUpdate = defineTaggedUnion({
@@ -71,6 +84,7 @@ export const Model = Schema.Struct({
   guidePage: Schema.Number,
   guideDialog: Dialog.Model,
   appUpdate: AppUpdate,
+  turnAlerts: TurnAlerts,
 })
 export type Model = typeof Model.Type
 
@@ -78,5 +92,6 @@ export const Flags = Schema.Struct({
   deviceId: Schema.String,
   maybeSavedFriendGame: Schema.Option(SavedFriendGame),
   maybeInviteCode: Schema.Option(Schema.String),
+  turnAlerts: TurnAlerts,
 })
 export type Flags = typeof Flags.Type

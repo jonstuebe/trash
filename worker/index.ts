@@ -1,7 +1,17 @@
 import { DurableObject } from 'cloudflare:workers'
-import { Effect, Option, Schema } from 'effect'
+import { Clock, Effect, Option, Schema } from 'effect'
 import * as SecureRandom from 'effect/crypto/SecureRandom'
 
+import type { Game } from '../src/domain/game'
+import {
+  type Alert,
+  NoticeJson,
+  PushRegistrationJson,
+  PushSubscriptionJson,
+  VAPID_PUBLIC_KEY,
+  VAPID_SUBJECT,
+  alertsFor,
+} from '../src/domain/push'
 import {
   ClientMessageJson,
   Intent,
@@ -13,12 +23,18 @@ import {
   type Shuffle,
   applyMove,
   isRoomCode,
+  roomPath,
   seat,
+  seatOfDevice,
   viewOf,
 } from '../src/domain/room'
+import { type Freshness, sendPush } from './webPush'
 
 const ROOM_KEY = 'room'
-const SOCKET_PATH = /^\/api\/rooms\/([A-Z0-9]+)\/socket$/
+const CODE_KEY = 'code'
+const pushKey = (seatIndex: number) => `push:${seatIndex}`
+
+const ROOM_PATH = /^\/api\/rooms\/([A-Z0-9]+)\/(socket|push)$/
 
 const shuffle: Shuffle = cards =>
   Effect.runSync(
@@ -27,11 +43,27 @@ const shuffle: Shuffle = cards =>
     ),
   )
 
+const SALT_BYTES = 16
+
+const freshness = (): Freshness =>
+  Effect.runSync(
+    Effect.gen(function* () {
+      const random = yield* SecureRandom.SecureRandom
+      const salt = yield* random.randomBytes(SALT_BYTES)
+      const nowMillis = yield* Clock.currentTimeMillis
+      return { salt, nowSeconds: Math.floor(nowMillis / 1000) }
+    }).pipe(Effect.provide(SecureRandom.layerWebCrypto)),
+  )
+
 const encodeServerMessage = Schema.encodeSync(ServerMessageJson)
 const decodeClientMessage = Schema.decodeUnknownOption(ClientMessageJson)
 const encodeRoom = Schema.encodeSync(RoomJson)
 const decodeRoom = Schema.decodeUnknownOption(RoomJson)
 const decodeIntent = Schema.decodeUnknownOption(Intent)
+const decodeRegistration = Schema.decodeUnknownOption(PushRegistrationJson)
+const encodeSubscription = Schema.encodeSync(PushSubscriptionJson)
+const decodeSubscription = Schema.decodeUnknownOption(PushSubscriptionJson)
+const encodeNotice = Schema.encodeSync(NoticeJson)
 
 // Each socket carries its seat, so it survives the Room hibernating.
 const Attachment = Schema.Struct({ seat: Schema.Number })
@@ -75,6 +107,77 @@ export class Room extends DurableObject<Env> {
     this.ctx.getWebSockets().forEach(socket => this.sendTo(socket, room))
   }
 
+  // Tells each player who has something to do and isn't connected. An open
+  // socket means the game is on their screen, so they need no alert.
+  private async alert(maybeBefore: Option.Option<Game>, after: Game) {
+    const code = this.ctx.storage.kv.get<string>(CODE_KEY)
+    const privateKey = this.env.VAPID_PRIVATE_KEY
+    if (code === undefined || !privateKey) {
+      return
+    }
+
+    const connectedSeats = this.ctx
+      .getWebSockets()
+      .flatMap(socket => Option.toArray(seatOf(socket)))
+    const vapid = {
+      publicKey: VAPID_PUBLIC_KEY,
+      privateKey,
+      subject: VAPID_SUBJECT,
+    }
+
+    const send = async ({ seat: seatIndex, title, body }: Alert) => {
+      const maybeSubscription = Option.flatMap(
+        Option.fromNullishOr(
+          this.ctx.storage.kv.get<string>(pushKey(seatIndex)),
+        ),
+        decodeSubscription,
+      )
+      if (Option.isNone(maybeSubscription)) {
+        return
+      }
+      const notice = encodeNotice({
+        title,
+        body,
+        url: roomPath(code),
+        tag: `trash-${code}`,
+      })
+      const result = await sendPush(
+        maybeSubscription.value,
+        notice,
+        vapid,
+        freshness(),
+      )
+      if (result === 'Gone') {
+        this.ctx.storage.kv.delete(pushKey(seatIndex))
+      }
+    }
+
+    await Promise.all(
+      alertsFor(maybeBefore, after)
+        .filter(({ seat: seatIndex }) => !connectedSeats.includes(seatIndex))
+        .map(send),
+    )
+  }
+
+  // Keeps the device's push subscription for its seat, replacing any older
+  // one, so turn alerts reach whichever device that player last turned them
+  // on from.
+  private async register(request: Request): Promise<Response> {
+    const maybeRegistration = decodeRegistration(await request.text())
+    const maybeSeat = Option.flatMap(
+      Option.all({ room: this.load(), registration: maybeRegistration }),
+      ({ room, registration }) => seatOfDevice(room, registration.device),
+    )
+    if (Option.isNone(maybeRegistration) || Option.isNone(maybeSeat)) {
+      return new Response('Not seated', { status: 403 })
+    }
+    this.ctx.storage.kv.put(
+      pushKey(maybeSeat.value),
+      encodeSubscription(maybeRegistration.value.subscription),
+    )
+    return new Response(null, { status: 204 })
+  }
+
   private refuse(reason: Refusal): Response {
     const { 0: client, 1: server } = new WebSocketPair()
     server.accept()
@@ -85,6 +188,13 @@ export class Room extends DurableObject<Env> {
 
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
+    const [, code = '', route] = ROOM_PATH.exec(url.pathname) ?? []
+    this.ctx.storage.kv.put(CODE_KEY, code)
+
+    if (route === 'push') {
+      return this.register(request)
+    }
+
     const deviceId = url.searchParams.get('device') ?? ''
     const maybeIntent = decodeIntent(url.searchParams.get('intent'))
 
@@ -92,7 +202,8 @@ export class Room extends DurableObject<Env> {
       return new Response('Bad request', { status: 400 })
     }
 
-    const seating = seat(this.load(), deviceId, maybeIntent.value, shuffle)
+    const maybeRoom = this.load()
+    const seating = seat(maybeRoom, deviceId, maybeIntent.value, shuffle)
 
     if (typeof seating === 'string') {
       return this.refuse(seating)
@@ -109,6 +220,15 @@ export class Room extends DurableObject<Env> {
     server.serializeAttachment({ seat: seatIndex } satisfies Attachment)
 
     this.broadcast(room)
+
+    // The guest's arrival deals the first round.
+    const wasWaiting = Option.match(maybeRoom, {
+      onNone: () => true,
+      onSome: before => Option.isNone(before.maybeGame),
+    })
+    if (wasWaiting && Option.isSome(room.maybeGame)) {
+      await this.alert(Option.none(), room.maybeGame.value)
+    }
 
     return new Response(null, { status: 101, webSocket: client })
   }
@@ -152,6 +272,7 @@ export class Room extends DurableObject<Env> {
     }
     this.save(nextRoom)
     this.broadcast(nextRoom)
+    await this.alert(Option.some(game), nextGame)
   }
 
   // Echoes the player's close. Codes like 1005 and 1006 only describe how a
@@ -173,13 +294,15 @@ export class Room extends DurableObject<Env> {
 export default {
   async fetch(request, _env, ctx) {
     const url = new URL(request.url)
-    const match = SOCKET_PATH.exec(url.pathname)
-    const code = match?.[1]
+    const [, code = '', route] = ROOM_PATH.exec(url.pathname) ?? []
 
-    if (code === undefined || !isRoomCode(code)) {
+    if (!isRoomCode(code)) {
       return new Response('Not found', { status: 404 })
     }
-    if (request.headers.get('Upgrade') !== 'websocket') {
+    if (route === 'push' && request.method !== 'POST') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+    if (route === 'socket' && request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected a WebSocket', { status: 426 })
     }
 

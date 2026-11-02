@@ -44,6 +44,8 @@ export default defineConfig({
         // second entry with another revision makes Workbox reject the whole
         // precache, so nothing works offline.
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        // Turn alerts for friend games (Web Push).
+        importScripts: ['/push-sw.js'],
       },
     }),
     cloudflare(),

@@ -18,5 +18,5 @@
     "../.cloudflare/types/index.d.ts",
     "../src/domain/**/*.ts"
   ],
-  "exclude": ["../src/**/*.test.ts"]
+  "exclude": ["../src/**/*.test.ts", "./**/*.test.ts"]
 }

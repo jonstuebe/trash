@@ -14,6 +14,9 @@ export const ShareOutcome = Schema.Literals([
 ])
 export type ShareOutcome = typeof ShareOutcome.Type
 
+export const AlertsOutcome = Schema.Literals(['On', 'Off', 'Blocked', 'Failed'])
+export type AlertsOutcome = typeof AlertsOutcome.Type
+
 export const Message = defineMessageUnion({
   ClickedPlayBot: {},
   ClickedPlayFriend: {},
@@ -51,6 +54,9 @@ export const Message = defineMessageUnion({
   ReturnedToApp: {},
   ClickedInvite: {},
   CompletedShareInvite: { outcome: ShareOutcome },
+  ClickedTurnOnAlerts: {},
+  CompletedEnableAlerts: { outcome: AlertsOutcome },
+  CompletedRegisterAlerts: { outcome: AlertsOutcome },
   FoundAppUpdate: {},
   ClickedUpdateApp: {},
   ClickedDismissAppUpdate: {},

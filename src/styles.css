@@ -1338,6 +1338,23 @@ button.glass:active:not(:disabled) {
     --table-fixed: 304px;
   }
 
+  /* The lobby carries more than the title screen: a code and three buttons. */
+  .title-screen.is-lobby {
+    padding-top: calc(env(safe-area-inset-top) + 4vh);
+  }
+
+  .is-lobby .fan {
+    --card-w: 80px;
+  }
+
+  .is-lobby .lobby-heading {
+    font-size: 34px;
+  }
+
+  .is-lobby .title-actions {
+    padding-top: 20px;
+  }
+
   .table-header {
     height: 44px;
   }

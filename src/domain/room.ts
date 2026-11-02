@@ -170,6 +170,19 @@ export const seat = (
     },
   })
 
+// The seat a device already holds, without seating it.
+export const seatOfDevice = (
+  room: Room,
+  deviceId: string,
+): Option.Option<number> => {
+  if (room.hostId === deviceId) {
+    return Option.some(HOST_SEAT)
+  }
+  return Option.exists(room.maybeGuestId, guestId => guestId === deviceId)
+    ? Option.some(GUEST_SEAT)
+    : Option.none()
+}
+
 const onTurn =
   (seat: number, transition: (game: Game) => Game) =>
   (game: Game): Game =>

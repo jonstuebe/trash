@@ -35,17 +35,19 @@ import {
   Invite,
   type Model,
   Screen,
+  TurnAlerts,
 } from './model'
 import { DragSheetToDismiss } from './sheetGesture'
 
 type H = HtmlBuilder<Message>
 
 // A game as one device sees it: which seat is "You", and for a friend game,
-// whether the socket is up.
+// whether the socket is up and whether turn alerts are on.
 type Table = Readonly<{
   game: Game
   viewer: number
   maybeConnection: Option.Option<Connection>
+  maybeTurnAlerts: Option.Option<TurnAlerts>
 }>
 
 const isMyTurn = (table: Table): boolean =>
@@ -104,6 +106,23 @@ const trashIcon = (h: H): Html =>
       h.path([
         h.D(
           'M9 3h6m-9 3h12m-1.5 0-.7 12.1a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9L5.5 6M10 10.5v6M14 10.5v6',
+        ),
+        h.Fill('none'),
+        h.Stroke('currentColor'),
+        h.StrokeWidth('1.8'),
+        h.StrokeLinecap('round'),
+        h.StrokeLinejoin('round'),
+      ]),
+    ],
+  )
+
+const bellIcon = (h: H): Html =>
+  h.svg(
+    [h.Class('icon'), h.ViewBox('0 0 24 24'), h.AriaHidden(true)],
+    [
+      h.path([
+        h.D(
+          'M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15L6 16.5ZM10 20.5a2.2 2.2 0 0 0 4 0',
         ),
         h.Fill('none'),
         h.Stroke('currentColor'),
@@ -554,6 +573,10 @@ const actionBar = (table: Table, h: H): Html => {
               : `Waiting for ${player.name}`,
           ],
         ),
+        Option.match(table.maybeTurnAlerts, {
+          onNone: () => h.empty,
+          onSome: turnAlerts => alertsButton(turnAlerts, 'Alert me', h),
+        }),
       ],
     )
   }
@@ -976,6 +999,42 @@ const friendNotice = (
     ],
   )
 
+// Shown while the player can still turn alerts on; once they're on, or can't
+// be, alertsNote explains instead.
+const alertsButton = (turnAlerts: TurnAlerts, label: string, h: H): Html => {
+  const button = (isAsking: boolean) =>
+    h.button(
+      [
+        h.Class('pill glass'),
+        h.Disabled(isAsking),
+        h.OnClick(Message.ClickedTurnOnAlerts()),
+      ],
+      [bellIcon(h), isAsking ? 'Turning on…' : label],
+    )
+  return TurnAlerts.matchOrElse(
+    turnAlerts,
+    {
+      Off: () => button(false),
+      Failed: () => button(false),
+      Asking: () => button(true),
+    },
+    () => h.empty,
+  )
+}
+
+const alertsNote = (turnAlerts: TurnAlerts): string =>
+  TurnAlerts.matchOrElse(
+    turnAlerts,
+    {
+      On: () => "You'll get an alert when it's your turn.",
+      Blocked: () => 'Alerts are off for Trash. Turn them on in Settings.',
+      NeedsHomeScreen: () =>
+        'Add Trash to your Home Screen to get an alert on your turn.',
+      Failed: () => "Couldn't turn on alerts. Try again.",
+    },
+    () => '',
+  )
+
 const inviteNote = (invite: Invite): string =>
   Invite.match(invite, {
     Idle: () => '',
@@ -988,10 +1047,11 @@ const lobbyView = (
   code: string,
   invite: Invite,
   connection: Connection,
+  turnAlerts: TurnAlerts,
   h: H,
 ): Html =>
   h.main(
-    [h.Class('title-screen')],
+    [h.Class('title-screen is-lobby')],
     [
       titleFan(h),
       h.h1([h.Class('lobby-heading')], ['Invite a friend']),
@@ -1005,7 +1065,10 @@ const lobbyView = (
         [h.Class('room-code glass'), h.AriaLabel(`Game code ${code}`)],
         [code],
       ),
-      h.p([h.Class('lobby-note'), h.AriaLive('polite')], [inviteNote(invite)]),
+      h.p(
+        [h.Class('lobby-note'), h.AriaLive('polite')],
+        [inviteNote(invite) || alertsNote(turnAlerts)],
+      ),
       h.div(
         [h.Class('title-actions')],
         [
@@ -1023,6 +1086,7 @@ const lobbyView = (
             ],
             ['Send invite'],
           ),
+          alertsButton(turnAlerts, 'Alert me on my turn', h),
           backToMenuButton(h),
         ],
       ),
@@ -1057,18 +1121,23 @@ const refusedView = (reason: Refusal, h: H): Html =>
 
 type FriendScreen = typeof Screen.Friend.Type
 
-const friendTable = (screen: FriendScreen, game: Game): Table => ({
+const friendTable = (
+  screen: FriendScreen,
+  game: Game,
+  turnAlerts: TurnAlerts,
+): Table => ({
   game,
   viewer: screen.seat,
   maybeConnection: Option.some(screen.connection),
+  maybeTurnAlerts: Option.some(turnAlerts),
 })
 
-const friendView = (screen: FriendScreen, h: H): Html =>
+const friendView = (screen: FriendScreen, turnAlerts: TurnAlerts, h: H): Html =>
   FriendRoom.match(screen.room, {
     Loading: () => connectingView(screen.connection, h),
     WaitingForGuest: () =>
-      lobbyView(screen.code, screen.invite, screen.connection, h),
-    Playing: ({ game }) => tableView(friendTable(screen, game), h),
+      lobbyView(screen.code, screen.invite, screen.connection, turnAlerts, h),
+    Playing: ({ game }) => tableView(friendTable(screen, game, turnAlerts), h),
     Refused: ({ reason }) => refusedView(reason, h),
   })
 
@@ -1078,17 +1147,21 @@ const botTable = (game: Game): Table => ({
   game,
   viewer: BOT_VIEWER,
   maybeConnection: Option.none(),
+  maybeTurnAlerts: Option.none(),
 })
 
-const screenTable = (screen: Screen): Option.Option<Table> =>
-  Screen.match(screen, {
+const screenTable = (model: Model): Option.Option<Table> =>
+  Screen.match(model.screen, {
     Title: () => Option.none(),
     StartingFriendGame: () => Option.none(),
     Table: ({ game }) => Option.some(botTable(game)),
     Friend: friend =>
       FriendRoom.matchOrElse(
         friend.room,
-        { Playing: ({ game }) => Option.some(friendTable(friend, game)) },
+        {
+          Playing: ({ game }) =>
+            Option.some(friendTable(friend, game, model.turnAlerts)),
+        },
         () => Option.none(),
       ),
   })
@@ -1098,7 +1171,7 @@ const screenTable = (screen: Screen): Option.Option<Table> =>
 const TITLE_ACCENT = '#5E5CE6'
 
 const accentFor = (model: Model): string =>
-  Option.match(screenTable(model.screen), {
+  Option.match(screenTable(model), {
     onNone: () => TITLE_ACCENT,
     onSome: table => currentPlayer(table.game).accent,
   })
@@ -1153,7 +1226,7 @@ const updateBanner = (model: Model, h: H): Html => {
 }
 
 export const view = (model: Model, h: H): Document => ({
-  title: Option.match(screenTable(model.screen), {
+  title: Option.match(screenTable(model), {
     onNone: () => 'Trash',
     onSome: table => `Trash · Round ${table.game.round}`,
   }),
@@ -1176,9 +1249,9 @@ export const view = (model: Model, h: H): Document => ({
         StartingFriendGame: () =>
           friendNotice('Setting up…', 'Making your game.', [], h),
         Table: ({ game }) => tableView(botTable(game), h),
-        Friend: screen => friendView(screen, h),
+        Friend: screen => friendView(screen, model.turnAlerts, h),
       }),
-      Option.match(screenTable(model.screen), {
+      Option.match(screenTable(model), {
         onNone: () => h.empty,
         onSome: table => phaseSheet(table, h),
       }),

@@ -45,7 +45,7 @@ import {
   ServerMessage,
   roomPath,
 } from './domain/room'
-import { Message, type ShareOutcome } from './message'
+import { type AlertsOutcome, Message, type ShareOutcome } from './message'
 import {
   AppUpdate,
   Connection,
@@ -57,9 +57,11 @@ import {
   Model,
   SavedFriendGame,
   Screen,
+  TurnAlerts,
 } from './model'
 import { RoomSocket, type RoomSocketService } from './roomSocket'
 import { forgetFriendGame, saveFriendGame } from './storage'
+import { enableTurnAlerts, registerTurnAlerts } from './turnAlerts'
 
 export { Message } from './message'
 export { Flags, Model } from './model'
@@ -92,6 +94,7 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
     guidePage: 0,
     guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
     appUpdate: AppUpdate.None(),
+    turnAlerts: flags.turnAlerts,
   }
 
   return Option.match(flags.maybeInviteCode, {
@@ -250,6 +253,24 @@ export const ShareInvite = Command.define('ShareInvite', {
         return 'Failed'
       }
     }).pipe(Effect.map(outcome => Message.CompletedShareInvite({ outcome }))),
+})
+
+export const EnableTurnAlerts = Command.define('EnableTurnAlerts', {
+  args: { code: Schema.String, deviceId: Schema.String },
+  messages: [Message.CompletedEnableAlerts],
+  execute: ({ code, deviceId }) =>
+    enableTurnAlerts(code, deviceId).pipe(
+      Effect.map(outcome => Message.CompletedEnableAlerts({ outcome })),
+    ),
+})
+
+export const RegisterTurnAlerts = Command.define('RegisterTurnAlerts', {
+  args: { code: Schema.String, deviceId: Schema.String },
+  messages: [Message.CompletedRegisterAlerts],
+  execute: ({ code, deviceId }) =>
+    registerTurnAlerts(code, deviceId).pipe(
+      Effect.map(outcome => Message.CompletedRegisterAlerts({ outcome })),
+    ),
 })
 
 const followUpCommands = (game: Game) =>
@@ -510,6 +531,15 @@ const setInvite = (model: Model, invite: Invite): Model =>
     () => model,
   )
 
+const turnAlertsAfter = (outcome: AlertsOutcome): TurnAlerts =>
+  Match.value(outcome).pipe(
+    Match.withReturnType<TurnAlerts>(),
+    Match.when('On', () => TurnAlerts.On()),
+    Match.when('Blocked', () => TurnAlerts.Blocked()),
+    Match.when('Failed', () => TurnAlerts.Failed()),
+    Match.orElse(() => TurnAlerts.Off()),
+  )
+
 const inviteAfterShare = (outcome: ShareOutcome): Invite =>
   Match.value(outcome).pipe(
     Match.withReturnType<Invite>(),
@@ -681,12 +711,22 @@ export const update = (model: Model, message: Message) =>
 
     CompletedShowUrl: () => ({ model }),
 
+    // Each connection hands the Room this device's push subscription again,
+    // so a Room always has the device's current one.
     ConnectedRoomSocket: () =>
       withFriendScreen(model, screen => ({
         model: setFriendScreen(
           model,
           modifyFields(screen, { connection: () => Connection.Connected() }),
         ),
+        commands: TurnAlerts.guards.On(model.turnAlerts)
+          ? [
+              RegisterTurnAlerts({
+                code: screen.code,
+                deviceId: model.deviceId,
+              }),
+            ]
+          : [],
       })),
 
     FailedConnectRoomSocket: () => markDisconnected(model),
@@ -716,6 +756,36 @@ export const update = (model: Model, message: Message) =>
 
     CompletedShareInvite: ({ outcome }) => ({
       model: setInvite(model, inviteAfterShare(outcome)),
+    }),
+
+    ClickedTurnOnAlerts: () =>
+      withFriendScreen(model, screen =>
+        TurnAlerts.guards.Off(model.turnAlerts) ||
+        TurnAlerts.guards.Failed(model.turnAlerts)
+          ? {
+              model: modifyFields(model, {
+                turnAlerts: () => TurnAlerts.Asking(),
+              }),
+              commands: [
+                EnableTurnAlerts({
+                  code: screen.code,
+                  deviceId: model.deviceId,
+                }),
+              ],
+            }
+          : { model },
+      ),
+
+    CompletedEnableAlerts: ({ outcome }) => ({
+      model: modifyFields(model, {
+        turnAlerts: () => turnAlertsAfter(outcome),
+      }),
+    }),
+
+    CompletedRegisterAlerts: ({ outcome }) => ({
+      model: modifyFields(model, {
+        turnAlerts: () => turnAlertsAfter(outcome),
+      }),
     }),
 
     FoundAppUpdate: () => ({

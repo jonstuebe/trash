@@ -1,4 +1,4 @@
-import { defineConfig, exports } from 'cf/config'
+import { bindings, defineConfig, exports } from 'cf/config'
 
 import * as entrypoint from './worker/index.ts' with { type: 'cf-worker' }
 
@@ -24,6 +24,12 @@ export default defineConfig({
     // production's rooms; ctx.exports gets each preview its own storage.
     exports: {
       Room: exports.durableObject({ storage: 'sqlite' }),
+    },
+    env: {
+      // Signs turn alerts (Web Push). Set it with
+      // `npx wrangler secret put VAPID_PRIVATE_KEY --name trash`; locally it
+      // comes from .dev.vars. See scripts/vapid.ts.
+      VAPID_PRIVATE_KEY: bindings.secret(),
     },
     assets: {
       notFoundHandling: 'single-page-application',

@@ -6,6 +6,7 @@ import { BrowserCrypto, BrowserKeyValueStore } from '@effect/platform-browser'
 
 import { roomCodeFromPath } from './domain/room'
 import { type Flags, SavedFriendGame } from './model'
+import { turnAlertsAtStart } from './turnAlerts'
 
 // What this device remembers between visits: its own ID, which the Room uses
 // to give it back its seat, and the friend game it last played.
@@ -44,6 +45,7 @@ export const flags: Effect.Effect<Flags> = Effect.gen(function* () {
     deviceId,
     maybeSavedFriendGame,
     maybeInviteCode: roomCodeFromPath(window.location.pathname),
+    turnAlerts: turnAlertsAtStart(),
   }
 }).pipe(
   // NOTE: without storage (a locked-down private window) the device gets a
@@ -53,6 +55,7 @@ export const flags: Effect.Effect<Flags> = Effect.gen(function* () {
       deviceId: SecureRandom.uuidV4Unsafe(),
       maybeSavedFriendGame: Option.none(),
       maybeInviteCode: roomCodeFromPath(window.location.pathname),
+      turnAlerts: turnAlertsAtStart(),
     }),
   ),
   Effect.provide(
