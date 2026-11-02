@@ -477,43 +477,35 @@ button.glass:active:not(:disabled) {
   padding-top: 32px;
 }
 
-.picker {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 8px 8px 22px;
-  border-radius: 999px;
+/* FRIEND LOBBY */
+
+.lobby-heading {
+  margin: 12px 0 0;
+  font-family: var(--font-rounded);
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  text-align: center;
 }
 
-.picker-label {
+.room-code {
+  margin: 20px 0 0;
+  padding: 10px 22px;
+  border-radius: 999px;
+  font-family: var(--font-rounded);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums;
+}
+
+.lobby-note {
+  margin: 10px 0 0;
+  min-height: 1.4em;
   color: var(--label-2);
-  font-size: 17px;
-}
-
-.segmented {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.3);
-}
-
-.segment {
-  width: 52px;
-  height: 38px;
-  border-radius: 999px;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--label-2);
-  transition:
-    background-color 0.25s,
-    color 0.25s,
-    transform 0.25s var(--spring);
-}
-
-.segment.is-selected {
-  background: rgba(255, 255, 255, 0.92);
-  color: #000;
+  font-size: 15px;
+  text-align: center;
 }
 
 /* TABLE */

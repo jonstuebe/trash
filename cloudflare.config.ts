@@ -1,4 +1,6 @@
-import { defineConfig } from 'cf/config'
+import { bindings, defineConfig, exports } from 'cf/config'
+
+import * as entrypoint from './worker/index.ts' with { type: 'cf-worker' }
 
 export default defineConfig({
   worker: {
@@ -14,8 +16,18 @@ export default defineConfig({
     observability: {
       enabled: true,
     },
+    // The Worker only serves friend games. Everything else, including bot
+    // games, is static assets that the service worker caches for offline play.
+    entrypoint,
+    exports: {
+      Room: exports.durableObject({ storage: 'sqlite' }),
+    },
+    env: {
+      ROOMS: bindings.durableObject({ worker: 'trash', exportName: 'Room' }),
+    },
     assets: {
       notFoundHandling: 'single-page-application',
+      runWorkerFirst: ['/api/*'],
     },
   },
 })

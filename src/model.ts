@@ -4,10 +4,51 @@ import { defineTaggedUnion } from 'foldkit/schema'
 import { Dialog } from '@foldkit/ui'
 
 import { Game } from './domain/game'
+import { Intent, Refusal } from './domain/room'
+
+// A friend game this device has a seat in, remembered so the app can reopen
+// it from the menu hours later.
+export const SavedFriendGame = Schema.Struct({
+  code: Schema.String,
+  intent: Intent,
+})
+export type SavedFriendGame = typeof SavedFriendGame.Type
+
+export const Connection = defineTaggedUnion({
+  Connecting: {},
+  Connected: {},
+  Disconnected: {},
+})
+export type Connection = typeof Connection.Type
+
+export const FriendRoom = defineTaggedUnion({
+  Loading: {},
+  WaitingForGuest: {},
+  Playing: { game: Game },
+  Refused: { reason: Refusal },
+})
+export type FriendRoom = typeof FriendRoom.Type
+
+export const Invite = defineTaggedUnion({
+  Idle: {},
+  Sharing: {},
+  Copied: {},
+  Failed: {},
+})
+export type Invite = typeof Invite.Type
 
 export const Screen = defineTaggedUnion({
   Title: {},
   Table: { game: Game },
+  StartingFriendGame: {},
+  Friend: {
+    code: Schema.String,
+    intent: Intent,
+    seat: Schema.Number,
+    room: FriendRoom,
+    connection: Connection,
+    invite: Invite,
+  },
 })
 export type Screen = typeof Screen.Type
 
@@ -25,9 +66,17 @@ export const GUIDE_DIALOG_ID = 'guide'
 
 export const Model = Schema.Struct({
   screen: Screen,
-  opponentCount: Schema.Number,
+  deviceId: Schema.String,
+  maybeSavedFriendGame: Schema.Option(SavedFriendGame),
   guidePage: Schema.Number,
   guideDialog: Dialog.Model,
   appUpdate: AppUpdate,
 })
 export type Model = typeof Model.Type
+
+export const Flags = Schema.Struct({
+  deviceId: Schema.String,
+  maybeSavedFriendGame: Schema.Option(SavedFriendGame),
+  maybeInviteCode: Schema.Option(Schema.String),
+})
+export type Flags = typeof Flags.Type

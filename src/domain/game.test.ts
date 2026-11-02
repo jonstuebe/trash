@@ -14,10 +14,12 @@ import {
   deal,
   drawFromStock,
   isComplete,
-  newGame,
+  newBotGame,
+  newFriendGame,
   nextRound,
   placeHeld,
   playableSlotIndexes,
+  redact,
   takeDiscard,
   trashHeld,
 } from './game'
@@ -53,7 +55,7 @@ const withSlots = (
 const playing = (
   overrides: Partial<Pick<Game, 'stock' | 'discard'>> = {},
 ): Game =>
-  modifyFields(newGame(1), {
+  modifyFields(newBotGame(), {
     stock: () => overrides.stock ?? [],
     discard: () => overrides.discard ?? [],
     phase: () => Phase.AwaitingDraw(),
@@ -63,19 +65,19 @@ const human = (game: Game): Player => Array.getUnsafe(game.players, 0)
 
 describe('deal', () => {
   test('deals ten face-down cards each and turns up one discard', () => {
-    const game = deal(newGame(2), buildDeck(2))
+    const game = deal(newBotGame(), buildDeck(1))
 
     expect(Array.map(game.players, player => player.slots.length)).toEqual([
-      10, 10, 10,
+      10, 10,
     ])
     expect(game.discard).toHaveLength(1)
-    expect(game.stock).toHaveLength(104 - 30 - 1)
+    expect(game.stock).toHaveLength(52 - 20 - 1)
     expect(Phase.guards.AwaitingDraw(game.phase)).toBe(true)
   })
 })
 
 describe('playableSlotIndexes', () => {
-  const player = human(withSlots(newGame(1), 0, hiddenRow(10)))
+  const player = human(withSlots(newBotGame(), 0, hiddenRow(10)))
 
   test('a number card fits its own face-down spot', () => {
     expect(playableSlotIndexes(player, card(7))).toEqual([6])
@@ -91,7 +93,7 @@ describe('playableSlotIndexes', () => {
   })
 
   test('a number above the round target does not fit', () => {
-    const shortHand = human(withSlots(newGame(1), 0, hiddenRow(5)))
+    const shortHand = human(withSlots(newBotGame(), 0, hiddenRow(5)))
     expect(playableSlotIndexes(shortHand, card(8))).toEqual([])
   })
 
@@ -99,7 +101,7 @@ describe('playableSlotIndexes', () => {
     const slots = Array.map(hiddenRow(10), (slot, index) =>
       index === 2 ? Slot.Revealed({ card: card(11, 'Hearts', 50) }) : slot,
     )
-    const withJack = human(withSlots(newGame(1), 0, slots))
+    const withJack = human(withSlots(newBotGame(), 0, slots))
     expect(playableSlotIndexes(withJack, card(3))).toEqual([2])
   })
 })
@@ -220,5 +222,32 @@ describe('bot', () => {
     expect(botStep(game).phase).toEqual(
       Phase.Holding({ card: card(6), from: 'Discard' }),
     )
+  })
+})
+
+describe('redact', () => {
+  test('hides face-down cards and the draw pile, and keeps the rest', () => {
+    const dealt = deal(newFriendGame(), buildDeck(1))
+    const withOneUp = withSlots(dealt, 0, [
+      Slot.Revealed({ card: card(1) }),
+      ...hiddenRow(9),
+    ])
+    const seen = redact(withOneUp)
+
+    expect(seen.stock).toHaveLength(withOneUp.stock.length)
+    expect(Array.every(seen.stock, stockCard => stockCard.rank === 0)).toBe(
+      true,
+    )
+    expect(Array.getUnsafe(human(seen).slots, 0)).toEqual(
+      Slot.Revealed({ card: card(1) }),
+    )
+    const otherSlots = Array.getUnsafe(seen.players, 1).slots
+    expect(
+      Array.every(
+        otherSlots,
+        slot => Slot.guards.Hidden(slot) && slot.card.rank === 0,
+      ),
+    ).toBe(true)
+    expect(seen.discard).toEqual(withOneUp.discard)
   })
 })
