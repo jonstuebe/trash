@@ -64,6 +64,7 @@ export type Invite = typeof Invite.Type
 export const Screen = defineTaggedUnion({
   Title: {},
   Naming: { draft: Schema.String, next: AfterNaming },
+  JoiningGame: { draft: Schema.String },
   Table: { game: Game },
   StartingFriendGame: {},
   Friend: {
@@ -90,6 +91,24 @@ export const TurnAlerts = defineTaggedUnion({
 })
 export type TurnAlerts = typeof TurnAlerts.Type
 
+// Whether Trash runs as a Home Screen app, and if not, how this phone adds
+// it to the Home Screen. Only the Home Screen app gets turn alerts on an
+// iPhone, and it's where a typed-in code opens a game.
+export const HomeScreen = defineTaggedUnion({
+  Added: {},
+  AddOnIos: {},
+  AddOnAndroid: {},
+  Unavailable: {},
+})
+export type HomeScreen = typeof HomeScreen.Type
+
+// What the sheet is showing.
+export const Guide = defineTaggedUnion({
+  HowToPlay: { page: Schema.Number },
+  GetTheApp: {},
+})
+export type Guide = typeof Guide.Type
+
 // A new version of the app has installed in the background and is waiting
 // for the player to switch to it.
 export const AppUpdate = defineTaggedUnion({
@@ -107,8 +126,9 @@ export const Model = Schema.Struct({
   deviceId: Schema.String,
   maybePlayerName: Schema.Option(Schema.String),
   friendGames: Schema.Array(FriendGameRow),
-  guidePage: Schema.Number,
+  guide: Guide,
   guideDialog: Dialog.Model,
+  homeScreen: HomeScreen,
   appUpdate: AppUpdate,
   turnAlerts: TurnAlerts,
 })
@@ -120,5 +140,6 @@ export const Flags = Schema.Struct({
   savedFriendGames: Schema.Array(SavedFriendGame),
   maybeInviteCode: Schema.Option(Schema.String),
   turnAlerts: TurnAlerts,
+  homeScreen: HomeScreen,
 })
 export type Flags = typeof Flags.Type

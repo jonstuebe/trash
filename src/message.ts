@@ -27,6 +27,11 @@ export type AlertsPermission = typeof AlertsPermission.Type
 export const Message = defineMessageUnion({
   ClickedPlayBot: {},
   ClickedPlayFriend: {},
+  ClickedJoinWithCode: {},
+  UpdatedJoinCodeDraft: { value: Schema.String },
+  SubmittedJoinCode: {},
+  ClickedCancelJoining: {},
+  ClickedGetTheApp: {},
   ClickedResumeFriendGame: { code: Schema.String },
   ClickedRemoveFriendGame: { code: Schema.String },
   ClickedChangeName: {},

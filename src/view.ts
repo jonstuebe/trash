@@ -30,6 +30,7 @@ import {
   PLAYER_NAME_MAX_LENGTH,
   type Refusal,
   cleanPlayerName,
+  roomCodeFromInput,
 } from './domain/room'
 import { Message } from './message'
 import {
@@ -40,6 +41,8 @@ import {
   FriendRoom,
   GUIDE_PAGE_COUNT,
   GameStatus,
+  Guide,
+  HomeScreen,
   Invite,
   type Model,
   Screen,
@@ -135,6 +138,46 @@ const questionmarkIcon = (h: H): Html =>
         h.Fill('currentColor'),
       ]),
     ],
+  )
+
+const strokeIcon = (className: string, d: string, h: H): Html =>
+  h.svg(
+    [h.Class(`icon ${className}`), h.ViewBox('0 0 24 24'), h.AriaHidden(true)],
+    [
+      h.path([
+        h.D(d),
+        h.Fill('none'),
+        h.Stroke('currentColor'),
+        h.StrokeWidth('1.8'),
+        h.StrokeLinecap('round'),
+        h.StrokeLinejoin('round'),
+      ]),
+    ],
+  )
+
+// Safari's Share button: a box with an arrow out of the top.
+const shareIcon = (h: H): Html =>
+  strokeIcon(
+    'share',
+    'M12 3v12M8 7l4-4 4 4M8.5 10H6.5a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5h-2',
+    h,
+  )
+
+// Add to Home Screen's icon: a plus in a rounded square.
+const addSquareIcon = (h: H): Html =>
+  strokeIcon(
+    'add-square',
+    'M12 8v8M8 12h8M7 3.5h10A3.5 3.5 0 0 1 20.5 7v10a3.5 3.5 0 0 1-3.5 3.5H7A3.5 3.5 0 0 1 3.5 17V7A3.5 3.5 0 0 1 7 3.5z',
+    h,
+  )
+
+// Chrome's menu button.
+const menuDotsIcon = (h: H): Html =>
+  h.svg(
+    [h.Class('icon menu-dots'), h.ViewBox('0 0 24 24'), h.AriaHidden(true)],
+    Array.map([5, 12, 19], cy =>
+      h.circle([h.Cx('12'), h.Cy(`${cy}`), h.R('2'), h.Fill('currentColor')]),
+    ),
   )
 
 const trashIcon = (h: H): Html =>
@@ -364,6 +407,22 @@ const gameListView = (model: Model, h: H): Html =>
       ),
   })
 
+// Offered on a phone that's playing in the browser. The Home Screen app is
+// where turn alerts work on an iPhone.
+const getTheAppLink = (homeScreen: HomeScreen, h: H): Html =>
+  HomeScreen.match(homeScreen, {
+    Added: () => h.empty,
+    Unavailable: () => h.empty,
+    AddOnIos: () => getTheAppButton(h),
+    AddOnAndroid: () => getTheAppButton(h),
+  })
+
+const getTheAppButton = (h: H): Html =>
+  h.button(
+    [h.Class('get-app'), h.OnClick(Message.ClickedGetTheApp())],
+    [addSquareIcon(h), 'Add Trash to your Home Screen'],
+  )
+
 const titleView = (model: Model, h: H): Html =>
   h.main(
     [
@@ -379,9 +438,25 @@ const titleView = (model: Model, h: H): Html =>
       h.div(
         [h.Class('title-actions')],
         [
-          h.button(
-            [h.Class('pill primary'), h.OnClick(Message.ClickedPlayFriend())],
-            ['Play a friend'],
+          getTheAppLink(model.homeScreen, h),
+          h.div(
+            [h.Class('pill-row')],
+            [
+              h.button(
+                [
+                  h.Class('pill primary'),
+                  h.OnClick(Message.ClickedPlayFriend()),
+                ],
+                ['Play a friend'],
+              ),
+              h.button(
+                [
+                  h.Class('pill glass'),
+                  h.OnClick(Message.ClickedJoinWithCode()),
+                ],
+                ['Join with code'],
+              ),
+            ],
           ),
           h.button(
             [h.Class('pill glass'), h.OnClick(Message.ClickedPlayBot())],
@@ -1011,23 +1086,31 @@ const GUIDE_PAGES: ReadonlyArray<GuidePage> = [
   },
 ]
 
-const guideContent = (model: Model, render: Dialog.RenderInfo, h: H) => {
-  const page = model.guidePage
+const sheetBar = (title: string, render: Dialog.RenderInfo, h: H) => [
+  h.div([h.Class('grabber')]),
+  h.div(
+    [h.Class('sheet-bar')],
+    [
+      h.h2([...render.title, h.Class('sheet-bar-title')], [title]),
+      h.button(
+        [...render.closeButton, h.Class('close glass'), h.AriaLabel('Close')],
+        [xmarkIcon(h)],
+      ),
+    ],
+  ),
+]
+
+const howToPlayContent = (
+  model: Model,
+  page: number,
+  render: Dialog.RenderInfo,
+  h: H,
+) => {
   const guidePage = Array.getUnsafe(GUIDE_PAGES, page)
   const isLastPage = page === GUIDE_PAGE_COUNT - 1
 
   return [
-    h.div([h.Class('grabber')]),
-    h.div(
-      [h.Class('sheet-bar')],
-      [
-        h.h2([...render.title, h.Class('sheet-bar-title')], ['How to play']),
-        h.button(
-          [...render.closeButton, h.Class('close glass'), h.AriaLabel('Close')],
-          [xmarkIcon(h)],
-        ),
-      ],
-    ),
+    ...sheetBar('How to play', render, h),
     h.keyed('div')(
       `guide-${page}`,
       [h.Class(`guide-panel tint-${guidePage.tint}`)],
@@ -1064,6 +1147,108 @@ const guideContent = (model: Model, render: Dialog.RenderInfo, h: H) => {
   ]
 }
 
+type InstallStep = Readonly<{ icon: (h: H) => Html; text: string }>
+
+type InstallText = Readonly<{
+  intro: string
+  steps: ReadonlyArray<InstallStep>
+  note: string
+}>
+
+const appIcon = (h: H): Html =>
+  h.img([h.Class('app-icon'), h.Src('/icon.svg'), h.Alt('')])
+
+const OPEN_FROM_HOME_SCREEN: InstallStep = {
+  icon: appIcon,
+  text: 'Open Trash from your Home Screen.',
+}
+
+// NOTE: on an iPhone, the Home Screen app keeps its own storage, apart from
+// Safari's, so the games and name from Safari don't follow the player there.
+const installText = (homeScreen: HomeScreen): InstallText =>
+  HomeScreen.match(homeScreen, {
+    AddOnIos: () => ({
+      intro:
+        "Trash plays best from your Home Screen: full screen, and it can alert you when it's your turn.",
+      steps: [
+        {
+          icon: shareIcon,
+          text: "Tap Share in Safari. If you don't see it, tap ••• first.",
+        },
+        {
+          icon: addSquareIcon,
+          text: 'Scroll down, tap Add to Home Screen, then Add.',
+        },
+        OPEN_FROM_HOME_SCREEN,
+      ],
+      note: 'The app starts fresh: games you began in Safari stay in Safari. To join a friend there, tap Join with code.',
+    }),
+    AddOnAndroid: () => ({
+      intro:
+        "Trash plays best from your Home Screen: full screen, and it can alert you when it's your turn.",
+      steps: [
+        { icon: menuDotsIcon, text: 'Tap the ⋮ menu in Chrome.' },
+        {
+          icon: addSquareIcon,
+          text: 'Tap Add to Home screen or Install app, then Install.',
+        },
+        OPEN_FROM_HOME_SCREEN,
+      ],
+      note: 'An invite link may still open in Chrome. To join a friend in the app, tap Join with code.',
+    }),
+    Added: () => ({
+      intro: 'Trash is already on your Home Screen.',
+      steps: [],
+      note: 'To join a friend, tap Join with code and type in the code they sent.',
+    }),
+    Unavailable: () => ({
+      intro:
+        'Open Trash in the browser on your phone, then add it to your Home Screen from the Share or ⋮ menu.',
+      steps: [],
+      note: 'To join a friend there, tap Join with code and type in the code they sent.',
+    }),
+  })
+
+const getTheAppContent = (
+  homeScreen: HomeScreen,
+  render: Dialog.RenderInfo,
+  h: H,
+) => {
+  const text = installText(homeScreen)
+  return [
+    ...sheetBar('Get the app', render, h),
+    h.p([h.Class('install-intro')], [text.intro]),
+    Array.match(text.steps, {
+      onEmpty: () => h.empty,
+      onNonEmpty: steps =>
+        h.ol(
+          [h.Class('install-steps')],
+          Array.map(steps, (step, index) =>
+            h.li(
+              [h.Class('install-step glass')],
+              [
+                h.span([h.Class('install-number')], [`${index + 1}`]),
+                h.span([h.Class('install-text')], [step.text]),
+                h.span([h.Class('install-icon')], [step.icon(h)]),
+              ],
+            ),
+          ),
+        ),
+    }),
+    h.p([h.Class('install-note')], [text.note]),
+    h.button(
+      [h.Class('pill primary'), h.OnClick(Message.ClickedGuideNext())],
+      ['Got it'],
+    ),
+  ]
+}
+
+const guideContent = (model: Model, render: Dialog.RenderInfo, h: H) =>
+  Guide.match(model.guide, {
+    HowToPlay: ({ page }) => howToPlayContent(model, page, render, h),
+    GetTheApp: () => getTheAppContent(model.homeScreen, render, h),
+  })
+
 const guideDialog = (model: Model, h: H): Html =>
   h.submodel({
     slotId: 'guide-dialog',
@@ -1080,7 +1265,9 @@ const guideDialog = (model: Model, h: H): Html =>
                 h.div(
                   [
                     ...render.panel,
-                    h.Class('sheet material guide'),
+                    h.Class(
+                      `sheet material guide ${Guide.guards.GetTheApp(model.guide) ? 'is-install' : ''}`,
+                    ),
                     h.OnMount(DragSheetToDismiss()),
                   ],
                   guideContent(model, render, h),
@@ -1198,6 +1385,11 @@ const alertsButton = (turnAlerts: TurnAlerts, label: string, h: H): Html => {
       Off: () => button(false),
       Failed: () => button(false),
       Asking: () => button(true),
+      NeedsHomeScreen: () =>
+        h.button(
+          [h.Class('pill glass'), h.OnClick(Message.ClickedGetTheApp())],
+          [bellIcon(h), label],
+        ),
     },
     () => h.empty,
   )
@@ -1220,7 +1412,7 @@ const inviteNote = (invite: Invite): string =>
   Invite.match(invite, {
     Idle: () => '',
     Sharing: () => '',
-    Copied: () => 'Link copied. Paste it into a message.',
+    Copied: () => 'Invite copied. Paste it into a message.',
     Failed: () => "Couldn't share the link. Read your friend the code.",
   })
 
@@ -1239,7 +1431,7 @@ const lobbyView = (
       h.p(
         [h.Class('tagline')],
         [
-          "Send them the link. The game starts when they open it, and it'll be here when you come back.",
+          "Send them the link, or have them tap Join with code and type this in. The game starts when they join, and it'll be here when you come back.",
         ],
       ),
       h.div(
@@ -1295,7 +1487,7 @@ const refusedView = (reason: Refusal, h: H): Html =>
     reason === 'Full' ? 'This game is full' : 'This game is gone',
     reason === 'Full'
       ? 'Two people are already playing it. Ask your friend for a new link.'
-      : 'Games are cleared after a while with no moves, or the link may be mistyped. Start a new one from the menu.',
+      : 'The code may be mistyped, or the game was cleared after a while with no moves. Check the code with your friend.',
     [backToMenuButton(h)],
     h,
   )
@@ -1303,6 +1495,8 @@ const refusedView = (reason: Refusal, h: H): Html =>
 type FriendScreen = typeof Screen.Friend.Type
 
 type NamingScreen = typeof Screen.Naming.Type
+
+type JoiningScreen = typeof Screen.JoiningGame.Type
 
 type NamingText = Readonly<{
   heading: string
@@ -1392,6 +1586,63 @@ const namingView = (screen: NamingScreen, h: H): Html => {
   )
 }
 
+const JOIN_CODE_INPUT_ID = 'join-code'
+
+const joiningView = (screen: JoiningScreen, h: H): Html => {
+  const isReady = Option.isSome(roomCodeFromInput(screen.draft))
+  return h.main(
+    [h.Class('title-screen is-naming')],
+    [
+      titleFan(h),
+      h.h1([h.Class('lobby-heading')], ['Join a game']),
+      h.p(
+        [h.Class('tagline')],
+        ['Type the code your friend sent you, or paste their invite.'],
+      ),
+      h.form(
+        [h.Class('naming-form'), h.OnSubmit(Message.SubmittedJoinCode())],
+        [
+          h.label([h.Class('sr-only'), h.For(JOIN_CODE_INPUT_ID)], ['Code']),
+          h.input([
+            h.Id(JOIN_CODE_INPUT_ID),
+            h.Class('name-input code-input glass'),
+            h.Type('text'),
+            h.Value(screen.draft),
+            h.Placeholder('K7QXMP'),
+            h.Autocomplete('off'),
+            h.Autocapitalize('characters'),
+            h.Spellcheck(false),
+            h.EnterKeyHint('go'),
+            h.Autofocus(true),
+            h.OnInput(value => Message.UpdatedJoinCodeDraft({ value })),
+          ]),
+          h.div(
+            [h.Class('title-actions')],
+            [
+              h.button(
+                [
+                  h.Class('pill primary'),
+                  h.Type('submit'),
+                  h.Disabled(!isReady),
+                ],
+                ['Join game'],
+              ),
+              h.button(
+                [
+                  h.Class('pill glass'),
+                  h.Type('button'),
+                  h.OnClick(Message.ClickedCancelJoining()),
+                ],
+                ['Cancel'],
+              ),
+            ],
+          ),
+        ],
+      ),
+    ],
+  )
+}
+
 const friendTable = (
   screen: FriendScreen,
   game: Game,
@@ -1425,6 +1676,7 @@ const screenTable = (model: Model): Option.Option<Table> =>
   Screen.match(model.screen, {
     Title: () => Option.none(),
     Naming: () => Option.none(),
+    JoiningGame: () => Option.none(),
     StartingFriendGame: () => Option.none(),
     Table: ({ game }) => Option.some(botTable(game)),
     Friend: friend =>
@@ -1519,6 +1771,7 @@ export const view = (model: Model, h: H): Document => ({
       Screen.match(model.screen, {
         Title: () => titleView(model, h),
         Naming: screen => namingView(screen, h),
+        JoiningGame: screen => joiningView(screen, h),
         StartingFriendGame: () =>
           friendNotice('Setting up…', 'Making your game.', [], h),
         Table: ({ game }) => tableView(botTable(game), h),

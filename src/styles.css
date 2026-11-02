@@ -485,6 +485,34 @@ button.glass:active:not(:disabled) {
   padding-top: 32px;
 }
 
+/* Play a friend and Join with code share a row. */
+.pill-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.pill-row .pill {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.get-app {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  color: var(--label-2);
+  font-size: 15px;
+}
+
+.get-app .icon {
+  width: 18px;
+  height: 18px;
+}
+
 /* GAME LIST
    With friend games saved, the title gives up its tagline and shrinks its
    fan so the list fits. The list is the one part of the screen that scrolls,
@@ -671,6 +699,19 @@ button.glass:active:not(:disabled) {
 .naming-form .title-actions {
   margin-top: 0;
   padding-top: 16px;
+}
+
+.code-input {
+  font-family: var(--font-rounded);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.code-input::placeholder {
+  font-weight: 500;
+  text-transform: none;
 }
 
 .name-input::placeholder {
@@ -1531,6 +1572,83 @@ button.glass:active:not(:disabled) {
 .dot.is-current::before {
   background: #fff;
   transform: scale(1.15);
+}
+
+/* GET THE APP
+   The same sheet as How to play, showing the steps to add Trash to the
+   Home Screen instead of the guide's pages. */
+
+.guide.is-install {
+  gap: 0;
+}
+
+.install-intro {
+  margin: 10px 4px 0;
+  font-size: 17px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.install-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.install-step {
+  display: grid;
+  grid-template-columns: 28px 1fr 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 22px;
+}
+
+.install-number {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.install-text {
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.install-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: #0a84ff;
+}
+
+.install-icon .icon {
+  width: 28px;
+  height: 28px;
+}
+
+.app-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.install-note {
+  margin: 14px 4px 18px;
+  color: var(--label-2);
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: center;
 }
 
 /* MOTION */

@@ -45,6 +45,19 @@ export const roomCodeFromPath = (path: string): Option.Option<string> => {
   )
 }
 
+// What a player typed into the join screen: the code itself, in any case and
+// with spaces or dashes, or a whole invite link pasted in.
+export const roomCodeFromInput = (input: string): Option.Option<string> => {
+  const linkMatch = /\/r\/([A-Za-z0-9]+)/.exec(input)
+  if (linkMatch) {
+    return roomCodeFromPath(linkMatch[0])
+  }
+  return Option.liftPredicate(
+    input.replace(/[\s-]/g, '').toUpperCase(),
+    isRoomCode,
+  )
+}
+
 export const HOST_SEAT = 0
 export const GUEST_SEAT = 1
 

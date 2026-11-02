@@ -7,7 +7,7 @@ import {
   VAPID_PUBLIC_KEY,
 } from './domain/push'
 import { type AlertsOutcome, Message } from './message'
-import { TurnAlerts } from './model'
+import { HomeScreen, TurnAlerts } from './model'
 
 // The browser side of turn alerts: asking for permission, subscribing this
 // device to push, and handing the subscription to the Room it plays in. One
@@ -16,6 +16,24 @@ import { TurnAlerts } from './model'
 const isIos = (): boolean =>
   /iPhone|iPad|iPod/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+
+const isAndroid = (): boolean => /Android/.test(navigator.userAgent)
+
+const isStandalone = (): boolean =>
+  window.matchMedia('(display-mode: standalone)').matches ||
+  ('standalone' in navigator && navigator.standalone === true)
+
+// NOTE: a desktop browser can install Trash too, but nothing needs it there,
+// so the app only offers it on phones.
+export const homeScreenAtStart = (): HomeScreen => {
+  if (isStandalone()) {
+    return HomeScreen.Added()
+  }
+  if (isIos()) {
+    return HomeScreen.AddOnIos()
+  }
+  return isAndroid() ? HomeScreen.AddOnAndroid() : HomeScreen.Unavailable()
+}
 
 const canPush = (): boolean =>
   'serviceWorker' in navigator &&

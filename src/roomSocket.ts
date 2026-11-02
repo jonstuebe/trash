@@ -104,6 +104,7 @@ const modelToMaybeRequirements = (
   Screen.match(model.screen, {
     Title: () => Option.none(),
     Naming: () => Option.none(),
+    JoiningGame: () => Option.none(),
     Table: () => Option.none(),
     StartingFriendGame: () => Option.none(),
     Friend: ({ code, intent, connection }) =>

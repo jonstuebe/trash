@@ -38,6 +38,8 @@ import {
   FriendRoom,
   GUIDE_DIALOG_ID,
   GameStatus,
+  Guide,
+  HomeScreen,
   Invite,
   Screen,
   TurnAlerts,
@@ -50,8 +52,9 @@ const atTable = (game: Game): Model => ({
   deviceId: DEVICE_ID,
   maybePlayerName: Option.some('Sam'),
   friendGames: [],
-  guidePage: 0,
+  guide: Guide.HowToPlay({ page: 0 }),
   guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
+  homeScreen: HomeScreen.Unavailable(),
   appUpdate: AppUpdate.None(),
   turnAlerts: TurnAlerts.Off(),
 })
@@ -66,6 +69,9 @@ const gameOf = (model: Model): Game =>
       throw new Error('expected the table')
     },
     Naming: () => {
+      throw new Error('expected the table')
+    },
+    JoiningGame: () => {
       throw new Error('expected the table')
     },
     Friend: () => {
@@ -85,8 +91,9 @@ describe('update', () => {
         deviceId: DEVICE_ID,
         maybePlayerName: Option.some('Sam'),
         friendGames: [],
-        guidePage: 0,
+        guide: Guide.HowToPlay({ page: 0 }),
         guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
+        homeScreen: HomeScreen.Unavailable(),
         appUpdate: AppUpdate.None(),
         turnAlerts: TurnAlerts.Off(),
       }),
@@ -168,10 +175,11 @@ describe('update', () => {
         deviceId: DEVICE_ID,
         maybePlayerName: Option.some('Sam'),
         friendGames: [],
-        guidePage: 2,
+        guide: Guide.HowToPlay({ page: 2 }),
         // The enter and leave transitions are the Dialog's business; this
         // story is about the guide's paging.
         guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID }),
+        homeScreen: HomeScreen.Unavailable(),
         appUpdate: AppUpdate.None(),
         turnAlerts: TurnAlerts.Off(),
       }),
@@ -179,7 +187,7 @@ describe('update', () => {
       Command.expectHas(Dialog.ShowDialog),
       model(next => {
         expect(next.guideDialog.isOpen).toBe(true)
-        expect(next.guidePage).toBe(0)
+        expect(next.guide).toEqual(Guide.HowToPlay({ page: 0 }))
       }),
       Command.resolveAll([
         Dialog.ShowDialog,
@@ -188,7 +196,7 @@ describe('update', () => {
       message(Message.ClickedGuideNext()),
       message(Message.ClickedGuideNext()),
       model(next => {
-        expect(next.guidePage).toBe(2)
+        expect(next.guide).toEqual(Guide.HowToPlay({ page: 2 }))
         expect(Screen.guards.Title(next.screen)).toBe(true)
       }),
       message(Message.ClickedGuideNext()),
@@ -203,6 +211,38 @@ describe('update', () => {
           ShuffleDeck,
           Message.CompletedShuffleDeck({ sequence: 0, deck: buildDeck(1) }),
         ],
+      ),
+    )
+  })
+
+  test('the Get the app sheet opens on its own and closes without starting a game', () => {
+    story(
+      update,
+      given<Model>({
+        ...atTable(botsTurn()),
+        screen: Screen.Title(),
+        guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID }),
+        homeScreen: HomeScreen.AddOnIos(),
+      }),
+      message(Message.ClickedGetTheApp()),
+      Command.expectHas(Dialog.ShowDialog),
+      model(next => {
+        expect(next.guideDialog.isOpen).toBe(true)
+        expect(next.guide).toEqual(Guide.GetTheApp())
+      }),
+      Command.resolveAll([
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
+      ]),
+      message(Message.ClickedGuideNext()),
+      Command.expectExact(Dialog.CloseDialog),
+      model(next => {
+        expect(next.guideDialog.isOpen).toBe(false)
+        expect(Screen.guards.Title(next.screen)).toBe(true)
+      }),
+      Command.resolve(
+        Dialog.CloseDialog,
+        Dialog.Message.CompletedCloseDialog(),
       ),
     )
   })
@@ -227,8 +267,9 @@ describe('update', () => {
       deviceId: DEVICE_ID,
       maybePlayerName: Option.some('Sam'),
       friendGames: [],
-      guidePage: 0,
+      guide: Guide.HowToPlay({ page: 0 }),
       guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
+      homeScreen: HomeScreen.Unavailable(),
       appUpdate: AppUpdate.None(),
       turnAlerts: TurnAlerts.Off(),
     })
@@ -291,6 +332,77 @@ describe('update', () => {
           const screen = friendScreenOf(next)
           expect(FriendRoom.guards.WaitingForGuest(screen.room)).toBe(true)
           expect(Connection.guards.Connected(screen.connection)).toBe(true)
+        }),
+      )
+    })
+
+    test('a typed-in code opens that game to join it', () => {
+      story(
+        update,
+        given(atTitle()),
+        message(Message.ClickedJoinWithCode()),
+        message(Message.UpdatedJoinCodeDraft({ value: 'k7q' })),
+        message(Message.SubmittedJoinCode()),
+        Command.expectNone(),
+        model(next => {
+          expect(Screen.guards.JoiningGame(next.screen)).toBe(true)
+        }),
+        message(Message.UpdatedJoinCodeDraft({ value: 'k7q xmp' })),
+        message(Message.SubmittedJoinCode()),
+        Command.expectHas(
+          SaveFriendGames({ games: [{ code: 'K7QXMP', intent: 'Join' }] }),
+          ShowUrl,
+        ),
+        model(next => {
+          const screen = friendScreenOf(next)
+          expect(screen.code).toBe('K7QXMP')
+          expect(screen.intent).toBe('Join')
+        }),
+        Command.resolveAll(
+          [SaveFriendGames, Message.CompletedSaveFriendGames()],
+          [ShowUrl, Message.CompletedShowUrl()],
+        ),
+      )
+    })
+
+    test('a typed-in code for a game this device hosts reopens it as host', () => {
+      story(
+        update,
+        given({
+          ...atTitle(),
+          friendGames: [
+            { code: 'K7QXMP', intent: 'Host', status: GameStatus.Unknown() },
+          ],
+          screen: Screen.JoiningGame({ draft: 'K7QXMP' }),
+        }),
+        message(Message.SubmittedJoinCode()),
+        model(next => {
+          expect(friendScreenOf(next).intent).toBe('Host')
+        }),
+        Command.resolveAll(
+          [SaveFriendGames, Message.CompletedSaveFriendGames()],
+          [ShowUrl, Message.CompletedShowUrl()],
+        ),
+      )
+    })
+
+    test('joining by code asks for a name first', () => {
+      story(
+        update,
+        given({
+          ...atTitle(),
+          maybePlayerName: Option.none(),
+          screen: Screen.JoiningGame({ draft: 'K7QXMP' }),
+        }),
+        message(Message.SubmittedJoinCode()),
+        Command.expectNone(),
+        model(next => {
+          expect(next.screen).toEqual(
+            Screen.Naming({
+              draft: '',
+              next: AfterNaming.OpenGame({ code: 'K7QXMP', intent: 'Join' }),
+            }),
+          )
         }),
       )
     })
@@ -472,8 +584,9 @@ describe('update', () => {
         { code: 'AAAAAA', intent: 'Host', status: GameStatus.Unknown() },
         { code: 'BBBBBB', intent: 'Join', status: GameStatus.Unknown() },
       ],
-      guidePage: 0,
+      guide: Guide.HowToPlay({ page: 0 }),
       guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
+      homeScreen: HomeScreen.Unavailable(),
       appUpdate: AppUpdate.None(),
       turnAlerts: TurnAlerts.Off(),
       ...overrides,
@@ -490,6 +603,7 @@ describe('update', () => {
       ],
       maybeInviteCode: Option.none(),
       turnAlerts: TurnAlerts.Off(),
+      homeScreen: HomeScreen.Unavailable(),
       ...overrides,
     })
 
