@@ -548,9 +548,10 @@ button.glass:active:not(:disabled) {
   color: var(--label);
 }
 
-.xmark {
-  width: 17px;
-  height: 17px;
+.round-button .glyph,
+.close .glyph {
+  width: 19px;
+  height: 19px;
 }
 
 .round-title {

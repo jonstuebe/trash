@@ -85,18 +85,43 @@ const suitIcon = (suit: Suit, h: H): Html =>
     [h.path([h.D(SUIT_PATHS[suit]), h.Fill('currentColor')])],
   )
 
-// SF Symbols' xmark, drawn as two rounded strokes.
+// Drawn after SF Symbols' xmark and questionmark at semibold, the weight
+// iOS uses in toolbar buttons. Not traced from them: Apple licenses SF
+// Symbols only for apps on its own platforms. Both share a stroke width so
+// they read as a pair in the table header.
+const GLYPH_STROKE_WIDTH = '2.1'
+
 const xmarkIcon = (h: H): Html =>
   h.svg(
-    [h.Class('icon xmark'), h.ViewBox('0 0 24 24'), h.AriaHidden(true)],
+    [h.Class('icon glyph xmark'), h.ViewBox('0 0 24 24'), h.AriaHidden(true)],
     [
       h.path([
         h.D('M6.5 6.5l11 11M17.5 6.5l-11 11'),
         h.Fill('none'),
         h.Stroke('currentColor'),
-        h.StrokeWidth('2.6'),
+        h.StrokeWidth(GLYPH_STROKE_WIDTH),
         h.StrokeLinecap('round'),
       ]),
+    ],
+  )
+
+const questionmarkIcon = (h: H): Html =>
+  h.svg(
+    [
+      h.Class('icon glyph questionmark'),
+      h.ViewBox('0 0 24 24'),
+      h.AriaHidden(true),
+    ],
+    [
+      h.path([
+        h.D('M7.2 7.9a4.8 4.8 0 0 1 9.6 0c0 3.3-4.8 3.5-4.8 6.9v.5'),
+        h.Fill('none'),
+        h.Stroke('currentColor'),
+        h.StrokeWidth(GLYPH_STROKE_WIDTH),
+        h.StrokeLinecap('round'),
+        h.StrokeLinejoin('round'),
+      ]),
+      h.circle([h.Cx('12'), h.Cy('20.2'), h.R('1.5'), h.Fill('currentColor')]),
     ],
   )
 
@@ -938,7 +963,7 @@ const tableHeader = (game: Game, h: H): Html =>
           h.AriaLabel('How to play'),
           h.OnClick(Message.ClickedHowToPlay()),
         ],
-        ['?'],
+        [questionmarkIcon(h)],
       ),
     ],
   )
