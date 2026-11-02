@@ -2,7 +2,13 @@ import { Option } from 'effect'
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, it } from 'vitest'
 
-import { Phase, drawFromStock, newFriendGame, trashHeld } from './game'
+import {
+  type Game,
+  Phase,
+  drawFromStock,
+  newFriendGame,
+  trashHeld,
+} from './game'
 import { alertsFor, seatToAct } from './push'
 import {
   GUEST_SEAT,
@@ -74,6 +80,42 @@ describe('alertsFor', () => {
         body: 'Alex won this one.',
       },
       { seat: GUEST_SEAT, title: 'Game over', body: 'You won!' },
+    ])
+  })
+
+  it('tells the other player when someone ends the game', () => {
+    const roundOver: Game = modifyFields(dealt(), {
+      phase: (): Phase => Phase.RoundOver({ finisherIndexes: [GUEST_SEAT] }),
+    })
+    const endedBy = (maybeWinnerIndex: Option.Option<number>) =>
+      modifyFields(roundOver, {
+        phase: () => Phase.Ended({ enderIndex: HOST_SEAT, maybeWinnerIndex }),
+      })
+
+    expect(
+      alertsFor(Option.some(roundOver), endedBy(Option.some(GUEST_SEAT))),
+    ).toEqual([
+      {
+        seat: GUEST_SEAT,
+        title: 'Game over',
+        body: 'Sam ended the game. You win!',
+      },
+    ])
+    expect(
+      alertsFor(Option.some(roundOver), endedBy(Option.some(HOST_SEAT))),
+    ).toEqual([
+      {
+        seat: GUEST_SEAT,
+        title: 'Game over',
+        body: 'Sam ended the game. Sam wins.',
+      },
+    ])
+    expect(alertsFor(Option.some(roundOver), endedBy(Option.none()))).toEqual([
+      {
+        seat: GUEST_SEAT,
+        title: 'Game over',
+        body: "Sam ended the game. It's a tie.",
+      },
     ])
   })
 

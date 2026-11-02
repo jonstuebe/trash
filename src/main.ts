@@ -1024,6 +1024,11 @@ export const update = (model: Model, message: Message) =>
         whenPhase(Phase.guards.RoundOver, Move.NextRound())(game),
       ),
 
+    ClickedEndGame: () =>
+      sendFriendMove((game, _seat) =>
+        whenPhase(Phase.guards.RoundOver, Move.EndGame())(game),
+      )(model),
+
     ClickedLeaveTable: () =>
       Screen.matchOrElse(
         model.screen,

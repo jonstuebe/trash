@@ -45,6 +45,12 @@ export const Phase = defineTaggedUnion({
   Reshuffling: {},
   RoundOver: { finisherIndexes: Schema.Array(Schema.Number) },
   GameOver: { winnerIndex: Schema.Number },
+  // A player called the game off between rounds. Whoever had fewer cards to
+  // play next wins; an even count is a tie.
+  Ended: {
+    enderIndex: Schema.Number,
+    maybeWinnerIndex: Schema.Option(Schema.Number),
+  },
 })
 export type Phase = typeof Phase.Type
 
@@ -452,6 +458,41 @@ export const nextRound = (game: Game): Game => {
       currentIndex: () => (round - 1) % game.players.length,
       maybeCloserIndex: () => Option.none(),
       phase: () => Phase.Shuffling(),
+    }),
+  )
+}
+
+// Ends the game between rounds instead of dealing the next one. Each target
+// becomes what that player would have played next round, so the standings
+// stay on the table.
+export const endGame = (game: Game, enderIndex: number): Game => {
+  if (!Phase.guards.RoundOver(game.phase)) {
+    return game
+  }
+
+  const finisherIndexes = game.phase.finisherIndexes
+  const players = Array.map(game.players, (player, index) =>
+    modifyFields(player, {
+      target: target =>
+        Array.contains(finisherIndexes, index) ? target - 1 : target,
+    }),
+  )
+  const fewest = Math.min(...Array.map(players, player => player.target))
+  const leaderIndexes = Array.filterMap(players, (player, index) =>
+    player.target === fewest ? Result.succeed(index) : Result.failVoid,
+  )
+
+  return bumpSequence(
+    modifyFields(game, {
+      players: () => players,
+      phase: () =>
+        Phase.Ended({
+          enderIndex,
+          maybeWinnerIndex:
+            leaderIndexes.length === 1
+              ? Array.head(leaderIndexes)
+              : Option.none(),
+        }),
     }),
   )
 }

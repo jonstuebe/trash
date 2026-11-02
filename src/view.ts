@@ -264,6 +264,7 @@ const rowPriority = (row: FriendGameRow): number =>
         TheirTurn: () => 3,
         WaitingForGuest: () => 4,
         Over: () => 5,
+        Ended: () => 5,
         Missing: () => 6,
         NotSeated: () => 6,
       }),
@@ -308,6 +309,17 @@ const rowText = (row: FriendGameRow): RowText =>
         Over: ({ opponentName, didWin }) => ({
           title: opponentName,
           detail: didWin ? 'You won · Play again?' : `${opponentName} won`,
+          isUrgent: false,
+        }),
+        Ended: ({ opponentName, round, outcome }) => ({
+          title: opponentName,
+          detail: `${
+            outcome === 'Won'
+              ? 'You won'
+              : outcome === 'Lost'
+                ? `${opponentName} won`
+                : 'Tied'
+          } · Ended after round ${round}`,
           isUrgent: false,
         }),
         Missing: () => ({
@@ -973,6 +985,12 @@ const roundOverSheet = (
         [h.Class('pill primary'), h.OnClick(Message.ClickedNextRound())],
         ['Next round'],
       ),
+      Option.isSome(table.maybeConnection)
+        ? h.button(
+            [h.Class('pill glass'), h.OnClick(Message.ClickedEndGame())],
+            ["I'm done"],
+          )
+        : h.empty,
     ],
     'Round over',
     h,
@@ -1011,6 +1029,63 @@ const gameOverSheet = (table: Table, winnerIndex: number, h: H): Html => {
       ),
       h.button(
         [h.Class('pill glass'), h.OnClick(Message.ClickedLeaveTable())],
+        ['Leave table'],
+      ),
+    ],
+    'Game over',
+    h,
+  )
+}
+
+// Someone called the game off between rounds; the targets are already what
+// each player would have played next.
+const endedSheet = (
+  table: Table,
+  enderIndex: number,
+  maybeWinnerIndex: Option.Option<number>,
+  h: H,
+): Html => {
+  const game = table.game
+  const headline = Option.match(maybeWinnerIndex, {
+    onNone: () => "It's a tie",
+    onSome: winnerIndex =>
+      isMe(table, winnerIndex)
+        ? 'You win!'
+        : `${displayName(table, winnerIndex)} wins`,
+  })
+  const ender = isMe(table, enderIndex) ? 'You' : displayName(table, enderIndex)
+
+  return sheet(
+    [
+      h.p([h.Class('sheet-eyebrow')], [`After round ${game.round}`]),
+      h.h2([h.Class('sheet-title')], [headline]),
+      h.p(
+        [h.Class('sheet-body')],
+        [`${ender} ended the game. Fewest cards left wins.`],
+      ),
+      h.ul(
+        [h.Class('standings')],
+        Array.map(game.players, (player, index) =>
+          h.keyed('li')(
+            displayName(table, index),
+            [
+              h.Class(
+                `standing ${Option.contains(maybeWinnerIndex, index) ? 'is-finisher' : ''}`,
+              ),
+            ],
+            [
+              h.span([h.Class('standing-emoji')], [player.avatar]),
+              h.span([h.Class('standing-name')], [displayName(table, index)]),
+              h.span(
+                [h.Class('standing-detail')],
+                [`${player.target} card${player.target === 1 ? '' : 's'} left`],
+              ),
+            ],
+          ),
+        ),
+      ),
+      h.button(
+        [h.Class('pill primary'), h.OnClick(Message.ClickedLeaveTable())],
         ['Leave table'],
       ),
     ],
@@ -1317,6 +1392,8 @@ const phaseSheet = (table: Table, h: H): Html =>
       RoundOver: ({ finisherIndexes }) =>
         roundOverSheet(table, finisherIndexes, h),
       GameOver: ({ winnerIndex }) => gameOverSheet(table, winnerIndex, h),
+      Ended: ({ enderIndex, maybeWinnerIndex }) =>
+        endedSheet(table, enderIndex, maybeWinnerIndex, h),
     },
     () => h.empty,
   )
