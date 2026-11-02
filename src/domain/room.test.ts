@@ -21,6 +21,7 @@ import {
   lifetimeOf,
   nameSeat,
   openRoom,
+  roomCodeFromInput,
   roomCodeFromPath,
   seat,
   settle,
@@ -45,6 +46,29 @@ const startedRoom = (): Room =>
   seated(seat(Option.some(openRoom(HOST)), GUEST, 'Join', unshuffled)).room
 
 const gameOf = (room: Room): Game => Option.getOrThrow(room.maybeGame)
+
+describe('roomCodeFromInput', () => {
+  test('reads a typed code in any case, with spaces or dashes', () => {
+    expect(roomCodeFromInput('K7QXMP')).toEqual(Option.some('K7QXMP'))
+    expect(roomCodeFromInput(' k7q xmp ')).toEqual(Option.some('K7QXMP'))
+    expect(roomCodeFromInput('k7q-xmp')).toEqual(Option.some('K7QXMP'))
+  })
+
+  test('reads the code out of a pasted invite link', () => {
+    expect(
+      roomCodeFromInput(
+        "Let's play Trash. Join my game: https://trash.example/r/k7qxmp",
+      ),
+    ).toEqual(Option.some('K7QXMP'))
+  })
+
+  test('refuses anything that is not a code', () => {
+    expect(roomCodeFromInput('')).toEqual(Option.none())
+    expect(roomCodeFromInput('K7QX')).toEqual(Option.none())
+    expect(roomCodeFromInput('K7QX0P')).toEqual(Option.none())
+    expect(roomCodeFromInput('K7QXMPP')).toEqual(Option.none())
+  })
+})
 
 describe('roomCodeFromPath', () => {
   test('reads an invite link, in any case', () => {

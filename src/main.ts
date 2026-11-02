@@ -37,6 +37,7 @@ import {
   RoomView,
   ServerMessage,
   cleanPlayerName,
+  roomCodeFromInput,
   roomPath,
 } from './domain/room'
 import {
@@ -55,6 +56,7 @@ import {
   GUIDE_DIALOG_ID,
   GUIDE_PAGE_COUNT,
   GameStatus,
+  Guide,
   Invite,
   Model,
   SavedFriendGame,
@@ -121,6 +123,14 @@ const withGameFirst = (
     }),
   )
 
+// A game this device already sits in reopens as whatever it was; any other
+// code is one to join.
+const intentFor = (rows: ReadonlyArray<FriendGameRow>, code: string): Intent =>
+  Option.match(findRow(rows, code), {
+    onNone: () => 'Join',
+    onSome: row => row.intent,
+  })
+
 // Opening an invite link takes this device straight to that game, once the
 // player has a name. A device that already sits in the room (the host, or a
 // returning guest) gets its own seat back; the Room decides that from the
@@ -131,8 +141,9 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
     deviceId: flags.deviceId,
     maybePlayerName: flags.maybePlayerName,
     friendGames: Array.map(flags.savedFriendGames, unknownRow),
-    guidePage: 0,
+    guide: Guide.HowToPlay({ page: 0 }),
     guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
+    homeScreen: flags.homeScreen,
     appUpdate: AppUpdate.None(),
     turnAlerts: flags.turnAlerts,
   }
@@ -143,13 +154,7 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
       commands: fetchSummaries(baseModel),
     }),
     onSome: code => {
-      const intent: Intent = Option.match(
-        findRow(baseModel.friendGames, code),
-        {
-          onNone: () => 'Join',
-          onSome: row => row.intent,
-        },
-      )
+      const intent = intentFor(baseModel.friendGames, code)
       return Option.match(baseModel.maybePlayerName, {
         onNone: () => ({
           model: modifyFields(baseModel, {
@@ -314,7 +319,10 @@ export const SendMove = Command.define('SendMove', {
     ),
 })
 
-const INVITE_TEXT = "Let's play Trash. Tap to join my game:"
+// The code is in the text as well as the link: a friend with Trash on their
+// Home Screen types it in there, since the link opens in the browser.
+const inviteText = (code: string): string =>
+  `Let's play Trash. Join my game with the code ${code}, or tap the link:`
 
 // The share sheet is the invite: on a phone it offers Messages first. Where
 // there's no share sheet, the link goes on the clipboard instead.
@@ -326,7 +334,7 @@ export const ShareInvite = Command.define('ShareInvite', {
       const url = new URL(roomPath(code), window.location.origin).toString()
       if (typeof navigator.share === 'function') {
         try {
-          await navigator.share({ title: 'Trash', text: INVITE_TEXT, url })
+          await navigator.share({ title: 'Trash', text: inviteText(code), url })
           return 'Shared'
         } catch (error) {
           return error instanceof DOMException && error.name === 'AbortError'
@@ -335,7 +343,7 @@ export const ShareInvite = Command.define('ShareInvite', {
         }
       }
       try {
-        await navigator.clipboard.writeText(`${INVITE_TEXT} ${url}`)
+        await navigator.clipboard.writeText(`${inviteText(code)} ${url}`)
         return 'Copied'
       } catch {
         return 'Failed'
@@ -558,6 +566,49 @@ const submitName = (model: Model, screen: NamingScreen): UpdateReturn =>
     },
   })
 
+type JoiningScreen = typeof Screen.JoiningGame.Type
+
+const withJoiningScreen = (
+  model: Model,
+  f: (screen: JoiningScreen) => UpdateReturn,
+): UpdateReturn =>
+  Screen.matchOrElse(model.screen, { JoiningGame: f }, () => ({ model }))
+
+// NOTE: an invite link opens in the browser, not in the Home Screen app, so
+// a player with the app joins by typing the code in instead.
+const submitJoinCode = (model: Model, screen: JoiningScreen): UpdateReturn =>
+  Option.match(roomCodeFromInput(screen.draft), {
+    onNone: () => ({ model }),
+    onSome: code =>
+      withPlayerName(
+        model,
+        AfterNaming.OpenGame({
+          code,
+          intent: intentFor(model.friendGames, code),
+        }),
+      ),
+  })
+
+const openSheet = (model: Model, guide: Guide): UpdateReturn =>
+  Update.combine(model, [
+    stepModel => ({
+      model: modifyFields(stepModel, { guide: () => guide }),
+    }),
+    openGuide,
+  ])
+
+const turnGuidePage = (model: Model, toPage: (page: number) => number) =>
+  modifyFields(model, {
+    guide: guide =>
+      Guide.match(guide, {
+        HowToPlay: ({ page }) =>
+          Guide.HowToPlay({
+            page: Math.min(GUIDE_PAGE_COUNT - 1, Math.max(0, toPage(page))),
+          }),
+        GetTheApp: () => guide,
+      }),
+  })
+
 // A Room that's gone (it expired) or that has no seat for this device drops
 // off the list.
 const receiveSummary = (
@@ -762,6 +813,26 @@ export const update = (model: Model, message: Message) =>
           ),
       }),
 
+    ClickedJoinWithCode: () => ({
+      model: modifyFields(model, {
+        screen: () => Screen.JoiningGame({ draft: '' }),
+      }),
+    }),
+
+    UpdatedJoinCodeDraft: ({ value }) =>
+      withJoiningScreen(model, screen => ({
+        model: modifyFields(model, {
+          screen: () => modifyFields(screen, { draft: () => value }),
+        }),
+      })),
+
+    SubmittedJoinCode: () =>
+      withJoiningScreen(model, screen => submitJoinCode(model, screen)),
+
+    ClickedCancelJoining: () => goToMenu(model),
+
+    ClickedGetTheApp: () => openSheet(model, Guide.GetTheApp()),
+
     ClickedRemoveFriendGame: ({ code }) => forgetFriendGame(model, code),
 
     ClickedChangeName: () => ({
@@ -807,31 +878,23 @@ export const update = (model: Model, message: Message) =>
         () => ({ model }),
       ),
 
-    ClickedHowToPlay: () =>
-      Update.combine(model, [
-        stepModel => ({
-          model: modifyFields(stepModel, { guidePage: () => 0 }),
-        }),
-        openGuide,
-      ]),
+    ClickedHowToPlay: () => openSheet(model, Guide.HowToPlay({ page: 0 })),
 
-    ClickedGuideNext: () => {
-      if (model.guidePage + 1 < GUIDE_PAGE_COUNT) {
-        return {
-          model: modifyFields(model, {
-            guidePage: () => model.guidePage + 1,
-          }),
-        }
-      }
-      return Screen.guards.Title(model.screen)
-        ? Update.combine(model, [closeGuide, startBotGame])
-        : closeGuide(model)
-    },
+    ClickedGuideNext: () =>
+      Guide.match(model.guide, {
+        HowToPlay: ({ page }) => {
+          if (page + 1 < GUIDE_PAGE_COUNT) {
+            return { model: turnGuidePage(model, () => page + 1) }
+          }
+          return Screen.guards.Title(model.screen)
+            ? Update.combine(model, [closeGuide, startBotGame])
+            : closeGuide(model)
+        },
+        GetTheApp: () => closeGuide(model),
+      }),
 
     ClickedGuidePage: ({ page }) => ({
-      model: modifyFields(model, {
-        guidePage: () => Math.min(GUIDE_PAGE_COUNT - 1, Math.max(0, page)),
-      }),
+      model: turnGuidePage(model, () => page),
     }),
 
     GotGuideDialogMessage: ({ message }) => foldGuideDialog(model, message),
