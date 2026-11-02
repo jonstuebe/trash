@@ -154,11 +154,19 @@ export class Room extends DurableObject<Env> {
     this.broadcast(nextRoom)
   }
 
+  // Echoes the player's close. Codes like 1005 and 1006 only describe how a
+  // socket ended (no code, or the connection just dropped, as when a phone
+  // suspends the app) and can't be sent back, so those get a normal close.
   override async webSocketClose(
     socket: WebSocket,
     code: number,
   ): Promise<void> {
-    socket.close(code === 1005 ? 1000 : code)
+    const isSendable = code === 1000 || (code >= 3000 && code <= 4999)
+    try {
+      socket.close(isSendable ? code : 1000)
+    } catch {
+      // Already closed.
+    }
   }
 }
 
