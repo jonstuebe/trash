@@ -15,12 +15,18 @@ export default defineConfig({
     tailwindcss(),
     foldkit(),
     VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      // 'prompt': a new version waits until the player taps Update in the banner
+      // (src/subscription.ts), so a deploy never reloads a game in progress.
+      registerType: 'prompt',
+      injectRegister: false,
       outDir: clientOutDir,
       pwaAssets: {
         config: true,
         overrideManifestIcons: true,
+        // index.html links the favicon and touch icon itself, and already
+        // sets theme-color.
+        includeHtmlHeadLinks: false,
+        injectThemeColor: false,
         integration: { outDir: resolve(clientOutDir) },
       },
       manifest: {
@@ -34,7 +40,10 @@ export default defineConfig({
         start_url: '/',
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+        // No webmanifest here: the plugin precaches the manifest itself, and a
+        // second entry with another revision makes Workbox reject the whole
+        // precache, so nothing works offline.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
       },
     }),
     cloudflare(),

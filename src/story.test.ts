@@ -8,19 +8,21 @@ import { Dialog } from '@foldkit/ui'
 import { buildDeck } from './domain/card'
 import { type Game, Phase, deal, newGame } from './domain/game'
 import {
+  ApplyAppUpdate,
   Message,
   type Model,
   ShuffleDeck,
   WaitBeforeBotStep,
   update,
 } from './main'
-import { GUIDE_DIALOG_ID, Screen } from './model'
+import { AppUpdate, GUIDE_DIALOG_ID, Screen } from './model'
 
 const atTable = (game: Game): Model => ({
   screen: Screen.Table({ game }),
   opponentCount: 1,
   guidePage: 0,
   guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
+  appUpdate: AppUpdate.None(),
 })
 
 const gameOf = (model: Model): Game =>
@@ -43,6 +45,7 @@ describe('update', () => {
         opponentCount: 1,
         guidePage: 0,
         guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
+        appUpdate: AppUpdate.None(),
       }),
       message(Message.ClickedNewGame()),
       Command.expectHas(ShuffleDeck),
@@ -90,6 +93,30 @@ describe('update', () => {
     )
   })
 
+  test('a new version shows the banner until the player updates or dismisses it', () => {
+    story(
+      update,
+      given<Model>(atTable(botsTurn())),
+      message(Message.FoundAppUpdate()),
+      model(next => {
+        expect(AppUpdate.guards.Available(next.appUpdate)).toBe(true)
+      }),
+      message(Message.ClickedDismissAppUpdate()),
+      model(next => {
+        expect(AppUpdate.guards.None(next.appUpdate)).toBe(true)
+      }),
+      message(Message.FoundAppUpdate()),
+      message(Message.ClickedUpdateApp()),
+      Command.expectHas(ApplyAppUpdate),
+      model(next => {
+        expect(AppUpdate.guards.Applying(next.appUpdate)).toBe(true)
+        // The game in progress is untouched until the page reloads.
+        expect(gameOf(next).currentIndex).toBe(1)
+      }),
+      Command.resolveAll([ApplyAppUpdate, Message.CompletedApplyAppUpdate()]),
+    )
+  })
+
   test('the guide opens as a sheet and its last page starts a game', () => {
     story(
       update,
@@ -100,6 +127,7 @@ describe('update', () => {
         // The enter and leave transitions are the Dialog's business; this
         // story is about the guide's paging.
         guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID }),
+        appUpdate: AppUpdate.None(),
       }),
       message(Message.ClickedHowToPlay()),
       Command.expectHas(Dialog.ShowDialog),

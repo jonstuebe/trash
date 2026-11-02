@@ -26,7 +26,7 @@ import {
   topDiscard,
 } from './domain/game'
 import { Message } from './message'
-import { GUIDE_PAGE_COUNT, type Model, Screen } from './model'
+import { AppUpdate, GUIDE_PAGE_COUNT, type Model, Screen } from './model'
 import { DragSheetToDismiss } from './sheetGesture'
 
 type H = HtmlBuilder<Message>
@@ -888,6 +888,55 @@ const accentFor = (model: Model): string =>
     Table: ({ game }) => currentPlayer(game).accent,
   })
 
+// UPDATE BANNER
+
+// Floats over whatever screen is showing, like an iOS notification banner.
+// The live region stays in the DOM so VoiceOver announces the banner when it
+// appears.
+const updateBanner = (model: Model, h: H): Html => {
+  const banner = (isApplying: boolean) =>
+    h.div(
+      [h.Class('update-banner material')],
+      [
+        h.div(
+          [h.Class('update-text')],
+          [
+            h.strong([], ['New version ready']),
+            h.span([], ['Update now to get the latest Trash.']),
+          ],
+        ),
+        h.button(
+          [
+            h.Class('update-action'),
+            h.Disabled(isApplying),
+            h.OnClick(Message.ClickedUpdateApp()),
+          ],
+          [isApplying ? 'Updating…' : 'Update'],
+        ),
+        h.button(
+          [
+            h.Class('update-dismiss'),
+            h.AriaLabel('Not now'),
+            h.Disabled(isApplying),
+            h.OnClick(Message.ClickedDismissAppUpdate()),
+          ],
+          [xmarkIcon(h)],
+        ),
+      ],
+    )
+
+  return h.div(
+    [h.Class('update-layer'), h.Role('status'), h.AriaLive('polite')],
+    [
+      AppUpdate.match(model.appUpdate, {
+        None: () => h.empty,
+        Available: () => banner(false),
+        Applying: () => banner(true),
+      }),
+    ],
+  )
+}
+
 export const view = (model: Model, h: H): Document => ({
   title: Screen.match(model.screen, {
     Title: () => 'Trash',
@@ -916,6 +965,7 @@ export const view = (model: Model, h: H): Document => ({
         Table: ({ game }) => phaseSheet(game, h),
       }),
       guideDialog(model, h),
+      updateBanner(model, h),
     ],
   ),
 })

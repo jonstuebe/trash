@@ -24,7 +24,13 @@ import {
   trashHeld,
 } from './domain/game'
 import { Message } from './message'
-import { GUIDE_DIALOG_ID, GUIDE_PAGE_COUNT, Model, Screen } from './model'
+import {
+  AppUpdate,
+  GUIDE_DIALOG_ID,
+  GUIDE_PAGE_COUNT,
+  Model,
+  Screen,
+} from './model'
 
 export { Message } from './message'
 export { Model } from './model'
@@ -40,6 +46,7 @@ export const init: Runtime.ApplicationInit<Model, Message> = () => ({
     opponentCount: 2,
     guidePage: 0,
     guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
+    appUpdate: AppUpdate.None(),
   },
 })
 
@@ -72,6 +79,21 @@ export const WaitBeforeBotStep = Command.define('WaitBeforeBotStep', {
     Effect.sleep(Duration.millis(delayMs)).pipe(
       Effect.as(Message.CompletedWaitBeforeBotStep({ sequence })),
     ),
+})
+
+// Tells the waiting service worker to take over. registerSW (src/subscription.ts)
+// reloads the page once it does, so the new version starts fresh.
+export const ApplyAppUpdate = Command.define('ApplyAppUpdate', {
+  messages: [Message.CompletedApplyAppUpdate],
+  execute: Effect.promise(async () => {
+    const registration = await navigator.serviceWorker?.getRegistration()
+    const waiting = registration?.waiting
+    if (waiting) {
+      waiting.postMessage({ type: 'SKIP_WAITING' })
+    } else {
+      window.location.reload()
+    }
+  }).pipe(Effect.as(Message.CompletedApplyAppUpdate())),
 })
 
 const followUpCommands = (game: Game) =>
@@ -273,4 +295,20 @@ export const update = (model: Model, message: Message) =>
         screen: () => Screen.Title(),
       }),
     }),
+
+    FoundAppUpdate: () => ({
+      model: modifyFields(model, { appUpdate: () => AppUpdate.Available() }),
+    }),
+
+    ClickedUpdateApp: () => ({
+      model: modifyFields(model, { appUpdate: () => AppUpdate.Applying() }),
+      commands: [ApplyAppUpdate()],
+    }),
+
+    ClickedDismissAppUpdate: () => ({
+      model: modifyFields(model, { appUpdate: () => AppUpdate.None() }),
+    }),
+
+    // The page reloads when the new worker takes over; nothing to do here.
+    CompletedApplyAppUpdate: () => ({ model }),
   })

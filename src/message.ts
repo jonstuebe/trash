@@ -26,5 +26,9 @@ export const Message = defineMessageUnion({
   ClickedNextRound: {},
   ClickedPlayAgain: {},
   ClickedLeaveTable: {},
+  FoundAppUpdate: {},
+  ClickedUpdateApp: {},
+  ClickedDismissAppUpdate: {},
+  CompletedApplyAppUpdate: {},
 })
 export type Message = typeof Message.Type

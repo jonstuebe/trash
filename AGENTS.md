@@ -19,6 +19,7 @@ Trash is a card game PWA (Vite + Foldkit, no XState: turn logic is pure and live
 - Vocabulary: a *spot* or *slot* is one of a player's Ace through Ten positions; the *target* is how many slots a player has this round; the *closer* is the first player to finish a round.
 - Sheets: How to play is a `@foldkit/ui` Dialog (`guideDialog` in the Model), so it gets enter and leave transitions, Escape and focus handling. `src/sheetGesture.ts` is a Mount for drag-to-dismiss: it moves the sheet directly in the DOM while dragging and sends only `SwipedDownGuide`.
 - Layout: every screen is exactly `--app-h` (`100dvh`) tall and never scrolls. Card size is derived from both width and height in `src/styles.css`; if you add chrome to the table, update `--table-fixed`.
+- Updates: the service worker uses `registerType: 'prompt'`. `src/subscription.ts` turns a waiting worker into `FoundAppUpdate`, the banner's Update button runs `ApplyAppUpdate` (posts `SKIP_WAITING`), and the page reloads when the new worker takes over. `virtual:pwa-register` is imported only there, because it doesn't exist under Vitest.
 - Icons: `public/icon.svg` is the source; `vite-plugin-pwa` generates PNGs at build time from `pwa-assets.config.ts`.
 
 ## Agent skills

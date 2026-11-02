@@ -7,14 +7,21 @@ export default defineConfig({
   headLinkOptions: { preset: '2023' },
   preset: {
     ...minimal2023Preset,
+    // icon.svg already has its own margins and a black background, so the
+    // preset's default 30% padding just shrinks the cards.
     maskable: {
       ...minimal2023Preset.maskable,
+      padding: 0.1,
       resizeOptions: { background: '#000000' },
     },
     apple: {
       ...minimal2023Preset.apple,
+      padding: 0,
       resizeOptions: { background: '#000000' },
     },
+    // The tab icon is public/favicon.svg, a simpler single card; see
+    // scripts/favicon.ts.
+    favicons: [],
   },
   images: ['public/icon.svg'],
 })
