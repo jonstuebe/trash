@@ -85,22 +85,19 @@ const suitIcon = (suit: Suit, h: H): Html =>
     [h.path([h.D(SUIT_PATHS[suit]), h.Fill('currentColor')])],
   )
 
-// Drawn after SF Symbols' xmark and questionmark at semibold, the weight
-// iOS uses in toolbar buttons. Not traced from them: Apple licenses SF
-// Symbols only for apps on its own platforms. Both share a stroke width so
-// they read as a pair in the table header.
-const GLYPH_STROKE_WIDTH = '2.1'
-
+// Ionicons' close-outline and help-outline (MIT), which stand in for SF
+// Symbols: Apple licenses those only for apps on its own platforms.
 const xmarkIcon = (h: H): Html =>
   h.svg(
-    [h.Class('icon glyph xmark'), h.ViewBox('0 0 24 24'), h.AriaHidden(true)],
+    [h.Class('icon glyph xmark'), h.ViewBox('0 0 512 512'), h.AriaHidden(true)],
     [
       h.path([
-        h.D('M6.5 6.5l11 11M17.5 6.5l-11 11'),
+        h.D('M368 368 144 144M368 144 144 368'),
         h.Fill('none'),
         h.Stroke('currentColor'),
-        h.StrokeWidth(GLYPH_STROKE_WIDTH),
+        h.StrokeWidth('32'),
         h.StrokeLinecap('round'),
+        h.StrokeLinejoin('round'),
       ]),
     ],
   )
@@ -109,19 +106,26 @@ const questionmarkIcon = (h: H): Html =>
   h.svg(
     [
       h.Class('icon glyph questionmark'),
-      h.ViewBox('0 0 24 24'),
+      h.ViewBox('0 0 512 512'),
       h.AriaHidden(true),
     ],
     [
       h.path([
-        h.D('M7.2 7.9a4.8 4.8 0 0 1 9.6 0c0 3.3-4.8 3.5-4.8 6.9v.5'),
+        h.D(
+          'M160 164s1.44-33 33.54-59.46C212.6 88.83 235.49 84.28 256 84c18.73-.23 35.47 2.94 45.48 7.82C318.59 100.2 352 120.6 352 164c0 45.67-29.18 66.37-62.35 89.18S248 298.36 248 324',
+        ),
         h.Fill('none'),
         h.Stroke('currentColor'),
-        h.StrokeWidth(GLYPH_STROKE_WIDTH),
+        h.StrokeWidth('40'),
         h.StrokeLinecap('round'),
-        h.StrokeLinejoin('round'),
+        h.StrokeMiterlimit('10'),
       ]),
-      h.circle([h.Cx('12'), h.Cy('20.2'), h.R('1.5'), h.Fill('currentColor')]),
+      h.circle([
+        h.Cx('248'),
+        h.Cy('399.99'),
+        h.R('32'),
+        h.Fill('currentColor'),
+      ]),
     ],
   )
 
