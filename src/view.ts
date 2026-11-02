@@ -1412,7 +1412,10 @@ const inviteNote = (invite: Invite): string =>
   Invite.match(invite, {
     Idle: () => '',
     Sharing: () => '',
-    Copied: () => 'Invite copied. Paste it into a message.',
+    Copied: ({ kind }) =>
+      kind === 'Code'
+        ? 'Code copied. Paste it into a message.'
+        : 'Invite copied. Paste it into a message.',
     Failed: () => "Couldn't share the link. Read your friend the code.",
   })
 
@@ -1435,8 +1438,19 @@ const lobbyView = (
         ],
       ),
       h.div(
-        [h.Class('room-code glass'), h.AriaLabel(`Game code ${code}`)],
-        [code],
+        [h.Class('room-code glass')],
+        [
+          h.span([h.AriaLabel(`Game code ${code}`)], [code]),
+          h.button(
+            [
+              h.Class('room-code-share'),
+              h.AriaLabel('Share the code'),
+              h.Disabled(Invite.guards.Sharing(invite)),
+              h.OnClick(Message.ClickedShareCode()),
+            ],
+            [shareIcon(h)],
+          ),
+        ],
       ),
       h.p(
         [h.Class('lobby-note'), h.AriaLive('polite')],

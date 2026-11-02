@@ -43,6 +43,7 @@ import {
 import {
   type AlertsOutcome,
   type AlertsPermission,
+  InviteKind,
   Message,
   type ShareOutcome,
 } from './message'
@@ -341,22 +342,30 @@ export const CancelInvite = Command.define('CancelInvite', {
     ),
 })
 
-// The code is in the text as well as the link: a friend with Trash on their
-// Home Screen types it in there, since the link opens in the browser.
-const inviteText = (code: string): string =>
-  `Let's play Trash. Join my game with the code ${code}, or tap the link:`
+// The link goes inside the text rather than in `url`: given both, iOS
+// Messages sends only the link. The code is there too, because the link opens
+// in the browser and a friend with Trash on their Home Screen types it in.
+const linkInviteText = (code: string): string => {
+  const url = new URL(roomPath(code), window.location.origin).toString()
+  return `Let's play Trash. Join my game with the code ${code}, or tap the link: ${url}`
+}
+
+// For a friend who already has the app: no room link, which would open the
+// browser. The site address is there for a friend who doesn't have it yet.
+const codeInviteText = (code: string): string =>
+  `Let's play Trash! Open Trash, tap Join with code, and enter ${code}. New to Trash? Get it at ${window.location.origin}`
 
 // The share sheet is the invite: on a phone it offers Messages first. Where
-// there's no share sheet, the link goes on the clipboard instead.
+// there's no share sheet, the text goes on the clipboard instead.
 export const ShareInvite = Command.define('ShareInvite', {
-  args: { code: Schema.String },
+  args: { code: Schema.String, kind: InviteKind },
   messages: [Message.CompletedShareInvite],
-  execute: ({ code }) =>
+  execute: ({ code, kind }) =>
     Effect.promise(async (): Promise<ShareOutcome> => {
-      const url = new URL(roomPath(code), window.location.origin).toString()
+      const text = kind === 'Link' ? linkInviteText(code) : codeInviteText(code)
       if (typeof navigator.share === 'function') {
         try {
-          await navigator.share({ title: 'Trash', text: inviteText(code), url })
+          await navigator.share({ text })
           return 'Shared'
         } catch (error) {
           return error instanceof DOMException && error.name === 'AbortError'
@@ -365,12 +374,14 @@ export const ShareInvite = Command.define('ShareInvite', {
         }
       }
       try {
-        await navigator.clipboard.writeText(`${inviteText(code)} ${url}`)
+        await navigator.clipboard.writeText(text)
         return 'Copied'
       } catch {
         return 'Failed'
       }
-    }).pipe(Effect.map(outcome => Message.CompletedShareInvite({ outcome }))),
+    }).pipe(
+      Effect.map(outcome => Message.CompletedShareInvite({ kind, outcome })),
+    ),
 })
 
 export const RegisterTurnAlerts = Command.define('RegisterTurnAlerts', {
@@ -820,10 +831,10 @@ const afterPermission = (
   )
 }
 
-const inviteAfterShare = (outcome: ShareOutcome): Invite =>
+const inviteAfterShare = (kind: InviteKind, outcome: ShareOutcome): Invite =>
   Match.value(outcome).pipe(
     Match.withReturnType<Invite>(),
-    Match.when('Copied', () => Invite.Copied()),
+    Match.when('Copied', () => Invite.Copied({ kind })),
     Match.when('Failed', () => Invite.Failed()),
     Match.orElse(() => Invite.Idle()),
   )
@@ -1077,11 +1088,17 @@ export const update = (model: Model, message: Message) =>
     ClickedInvite: () =>
       withFriendScreen(model, screen => ({
         model: setInvite(model, Invite.Sharing()),
-        commands: [ShareInvite({ code: screen.code })],
+        commands: [ShareInvite({ code: screen.code, kind: 'Link' })],
       })),
 
-    CompletedShareInvite: ({ outcome }) => ({
-      model: setInvite(model, inviteAfterShare(outcome)),
+    ClickedShareCode: () =>
+      withFriendScreen(model, screen => ({
+        model: setInvite(model, Invite.Sharing()),
+        commands: [ShareInvite({ code: screen.code, kind: 'Code' })],
+      })),
+
+    CompletedShareInvite: ({ kind, outcome }) => ({
+      model: setInvite(model, inviteAfterShare(kind, outcome)),
     }),
 
     ClickedCancelInvite: () =>

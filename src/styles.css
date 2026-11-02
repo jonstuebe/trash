@@ -737,14 +737,45 @@ button.glass:active:not(:disabled) {
 }
 
 .room-code {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 20px 0 0;
-  padding: 10px 22px;
+  /* The share button's own padding makes up the right edge. */
+  padding: 10px 10px 10px 22px;
   border-radius: 999px;
   font-family: var(--font-rounded);
   font-size: 28px;
   font-weight: 700;
   letter-spacing: 0.18em;
   font-variant-numeric: tabular-nums;
+}
+
+.room-code-share {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: -6px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--label-2);
+  cursor: pointer;
+}
+
+.room-code-share .icon {
+  width: 24px;
+  height: 24px;
+}
+
+.room-code-share:active {
+  opacity: 0.5;
+}
+
+.room-code-share:disabled {
+  opacity: 0.4;
 }
 
 .lobby-note {
