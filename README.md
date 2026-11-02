@@ -14,6 +14,26 @@ bun run preview  # serve the build
 
 To install it on an iPhone, open the deployed site in Safari, tap Share, then Add to Home Screen.
 
+## Deploying
+
+The site runs on Cloudflare Workers at [trash.jonstuebe.com](https://trash.jonstuebe.com), deployed with the [`cf` CLI](https://developers.cloudflare.com/cf/). The Worker is set up in `cloudflare.config.ts`.
+
+- **Production:** every push to `main` builds and deploys through Cloudflare Workers Builds, which is connected to this repo.
+- **Previews:** pushes to other branches deploy a Worker Preview with its own `workers.dev` URL. The production domain isn't affected.
+- **By hand:** run `cf auth login` once, then `bun run deploy`.
+
+Workers Builds settings (dashboard → Workers & Pages → trash → Settings → Builds):
+
+| Setting         | Value                               |
+| --------------- | ----------------------------------- |
+| Build command   | `bun run typecheck && bun run test` |
+| Deploy command  | `npx cf deploy`                     |
+| Preview command | `npx cf previews deploy`            |
+
+`cf deploy` runs the Vite build itself, so the build command only gates the deploy on checks. Use `npx` rather than `bunx` because `cf` doesn't support running under Bun.
+
+The build writes to `.cloudflare/output/`, not `dist/`. `vite.config.ts` points `vite-plugin-pwa` at that folder so the service worker and icons ship with the build.
+
 ## Rules
 
 - Each player has ten face-down cards for the spots Ace through Ten.
