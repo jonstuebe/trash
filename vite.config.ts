@@ -21,6 +21,10 @@ export default defineConfig({
       pwaAssets: {
         config: true,
         overrideManifestIcons: true,
+        // index.html links the favicon and touch icon itself, and already
+        // sets theme-color.
+        includeHtmlHeadLinks: false,
+        injectThemeColor: false,
         integration: { outDir: resolve(clientOutDir) },
       },
       manifest: {
