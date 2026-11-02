@@ -485,7 +485,8 @@ button.glass:active:not(:disabled) {
   padding-top: 32px;
 }
 
-/* Play a friend and Join with code share a row. */
+/* Play a friend and Join with code share a row, as do the lobby's Back to
+   menu and Cancel invite. */
 .pill-row {
   display: flex;
   gap: 12px;

@@ -17,6 +17,7 @@ import {
   type Seating,
   UNJOINED_INVITE_LIFETIME,
   applyMove,
+  cancellationOf,
   cleanPlayerName,
   lifetimeOf,
   nameSeat,
@@ -349,6 +350,27 @@ describe('summaryOf', () => {
     expect(summaryOf(over, HOST)).toEqual(
       GameSummary.Over({ opponentName: 'Alex', didWin: false }),
     )
+  })
+})
+
+describe('cancellationOf', () => {
+  test('the host can cancel an invite nobody has joined', () => {
+    expect(cancellationOf(Option.some(openRoom(HOST)), HOST)).toBe('Delete')
+  })
+
+  test('once the guest has joined, the game stays', () => {
+    expect(cancellationOf(Option.some(startedRoom()), HOST)).toBe('Joined')
+  })
+
+  test('nobody else can cancel it', () => {
+    expect(cancellationOf(Option.some(openRoom(HOST)), STRANGER)).toBe(
+      'NotHost',
+    )
+    expect(cancellationOf(Option.some(startedRoom()), GUEST)).toBe('NotHost')
+  })
+
+  test('a room that is already gone has nothing to cancel', () => {
+    expect(cancellationOf(Option.none(), HOST)).toBe('Gone')
   })
 })
 
