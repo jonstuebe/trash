@@ -1487,9 +1487,10 @@ button.glass:active:not(:disabled) {
   color: var(--label-2);
 }
 
+/* The glyph fills under half its box, so this is a 9px cross. */
 .update-dismiss .xmark {
-  width: 13px;
-  height: 13px;
+  width: 20px;
+  height: 20px;
 }
 
 @keyframes banner-in {
