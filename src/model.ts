@@ -5,6 +5,7 @@ import { Dialog } from '@foldkit/ui'
 
 import { Game } from './domain/game'
 import { GameSummary, Intent, Refusal } from './domain/room'
+import { InviteKind } from './message'
 
 // A friend game this device has a seat in, remembered so the app can reopen
 // it from the menu hours later.
@@ -56,7 +57,7 @@ export type FriendRoom = typeof FriendRoom.Type
 export const Invite = defineTaggedUnion({
   Idle: {},
   Sharing: {},
-  Copied: {},
+  Copied: { kind: InviteKind },
   Failed: {},
 })
 export type Invite = typeof Invite.Type

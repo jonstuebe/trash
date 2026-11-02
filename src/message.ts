@@ -14,6 +14,11 @@ export const ShareOutcome = Schema.Literals([
 ])
 export type ShareOutcome = typeof ShareOutcome.Type
 
+// What the share sheet sends: the invite link, or just the code for a friend
+// who will type it into their Home Screen app.
+export const InviteKind = Schema.Literals(['Link', 'Code'])
+export type InviteKind = typeof InviteKind.Type
+
 export const CancelOutcome = Schema.Literals(['Cancelled', 'Joined', 'Failed'])
 export type CancelOutcome = typeof CancelOutcome.Type
 
@@ -78,7 +83,8 @@ export const Message = defineMessageUnion({
   ReturnedToApp: {},
   LeftApp: {},
   ClickedInvite: {},
-  CompletedShareInvite: { outcome: ShareOutcome },
+  ClickedShareCode: {},
+  CompletedShareInvite: { kind: InviteKind, outcome: ShareOutcome },
   ClickedCancelInvite: {},
   CompletedCancelInvite: { code: Schema.String, outcome: CancelOutcome },
   ClickedTurnOnAlerts: {},
