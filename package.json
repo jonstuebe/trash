@@ -12,7 +12,8 @@
     "test": "vitest run",
     "lint": "oxlint src worker && effect-tsgo patch --no-typescript --oxlint && oxlint --config .oxlintrc.effect.json --deny-warnings src",
     "deploy": "cf deploy",
-    "favicon": "bun scripts/favicon.ts"
+    "favicon": "bun scripts/favicon.ts",
+    "foldkit:source": "node scripts/foldkit-source.ts"
   },
   "dependencies": {
     "@effect/platform-browser": "4.1.0",

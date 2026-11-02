@@ -6,9 +6,11 @@ Foldkit owns `FOLDKIT.md` and replaces it whole on upgrade. This file is yours. 
 
 `FOLDKIT.md` reads the line below to decide whether it has already offered to vendor the Foldkit source. Leave it in place.
 
-subtree_prompted: false
+subtree_prompted: true
 
 ## Project Notes
+
+- Foldkit source: not vendored. `npm run foldkit:source` clones the Foldkit repo into the gitignored `repos/foldkit`, at the tag matching the installed `foldkit` package, so FOLDKIT.md's "if `./repos/foldkit` exists" guidance applies. Run it on a fresh clone and again after each Foldkit upgrade; ignore FOLDKIT.md's `git subtree` commands.
 
 Trash is a card game PWA (Vite + Foldkit, no XState: turn logic is pure and lives in `update`).
 
