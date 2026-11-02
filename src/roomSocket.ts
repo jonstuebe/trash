@@ -25,14 +25,21 @@ const RoomSocketRequirements = Schema.Struct({
   code: Schema.String,
   intent: Intent,
   deviceId: Schema.String,
+  name: Schema.String,
 })
 type RoomSocketRequirements = typeof RoomSocketRequirements.Type
 
-const socketUrl = ({ code, intent, deviceId }: RoomSocketRequirements) => {
+const socketUrl = ({
+  code,
+  intent,
+  deviceId,
+  name,
+}: RoomSocketRequirements) => {
   const url = new URL(`/api/rooms/${code}/socket`, window.location.href)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   url.searchParams.set('device', deviceId)
   url.searchParams.set('intent', intent)
+  url.searchParams.set('name', name)
   return url.toString()
 }
 
@@ -96,12 +103,18 @@ const modelToMaybeRequirements = (
 ): Option.Option<RoomSocketRequirements> =>
   Screen.match(model.screen, {
     Title: () => Option.none(),
+    Naming: () => Option.none(),
     Table: () => Option.none(),
     StartingFriendGame: () => Option.none(),
     Friend: ({ code, intent, connection }) =>
       Connection.guards.Disconnected(connection)
         ? Option.none()
-        : Option.some({ code, intent, deviceId: model.deviceId }),
+        : Option.some({
+            code,
+            intent,
+            deviceId: model.deviceId,
+            name: Option.getOrElse(model.maybePlayerName, () => ''),
+          }),
   })
 
 export const managedResources = ManagedResource.make<Model, Message>()(

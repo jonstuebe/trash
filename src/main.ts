@@ -1,13 +1,4 @@
-import {
-  Array,
-  Duration,
-  Effect,
-  Match,
-  Option,
-  Random,
-  Schema,
-  pipe,
-} from 'effect'
+import { Array, Duration, Effect, Match, Option, Random, Schema } from 'effect'
 import { SecureRandom } from 'effect/crypto'
 import { Command, Runtime, Update } from 'foldkit'
 import { replaceUrl } from 'foldkit/navigation'
@@ -37,12 +28,15 @@ import {
 } from './domain/game'
 import {
   ClientMessageJson,
+  GameSummary,
+  GameSummaryJson,
   type Intent,
   Move,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   RoomView,
   ServerMessage,
+  cleanPlayerName,
   roomPath,
 } from './domain/room'
 import {
@@ -52,12 +46,15 @@ import {
   type ShareOutcome,
 } from './message'
 import {
+  AfterNaming,
   AppUpdate,
   Connection,
   type Flags,
+  type FriendGameRow,
   FriendRoom,
   GUIDE_DIALOG_ID,
   GUIDE_PAGE_COUNT,
+  GameStatus,
   Invite,
   Model,
   SavedFriendGame,
@@ -65,7 +62,7 @@ import {
   TurnAlerts,
 } from './model'
 import { RoomSocket, type RoomSocketService } from './roomSocket'
-import { forgetFriendGame, saveFriendGame } from './storage'
+import { saveFriendGames, savePlayerName } from './storage'
 import { registerTurnAlerts } from './turnAlerts'
 
 export { Message } from './message'
@@ -88,14 +85,52 @@ const friendScreen = (code: string, intent: Intent): Screen =>
     invite: Invite.Idle(),
   })
 
-// Opening an invite link takes this device straight to that game. A device
-// that already sits in the room (the host, or a returning guest) gets its own
-// seat back; the Room decides that from the device ID, not the intent.
+const unknownRow = (saved: SavedFriendGame): FriendGameRow => ({
+  code: saved.code,
+  intent: saved.intent,
+  status: GameStatus.Unknown(),
+})
+
+const savedOf = (
+  rows: ReadonlyArray<FriendGameRow>,
+): ReadonlyArray<SavedFriendGame> =>
+  Array.map(rows, row => ({ code: row.code, intent: row.intent }))
+
+const findRow = (
+  rows: ReadonlyArray<FriendGameRow>,
+  code: string,
+): Option.Option<FriendGameRow> =>
+  Array.findFirst(rows, row => row.code === code)
+
+const withoutGame = (
+  rows: ReadonlyArray<FriendGameRow>,
+  code: string,
+): ReadonlyArray<FriendGameRow> => Array.filter(rows, row => row.code !== code)
+
+// The game just opened moves to the top of the list.
+const withGameFirst = (
+  rows: ReadonlyArray<FriendGameRow>,
+  code: string,
+  intent: Intent,
+): ReadonlyArray<FriendGameRow> =>
+  Array.prepend(
+    withoutGame(rows, code),
+    Option.match(findRow(rows, code), {
+      onNone: () => unknownRow({ code, intent }),
+      onSome: row => row,
+    }),
+  )
+
+// Opening an invite link takes this device straight to that game, once the
+// player has a name. A device that already sits in the room (the host, or a
+// returning guest) gets its own seat back; the Room decides that from the
+// device ID, not the intent.
 export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
   const baseModel: Model = {
     screen: Screen.Title(),
     deviceId: flags.deviceId,
-    maybeSavedFriendGame: flags.maybeSavedFriendGame,
+    maybePlayerName: flags.maybePlayerName,
+    friendGames: Array.map(flags.savedFriendGames, unknownRow),
     guidePage: 0,
     guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
     appUpdate: AppUpdate.None(),
@@ -103,23 +138,39 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
   }
 
   return Option.match(flags.maybeInviteCode, {
-    onNone: () => ({ model: baseModel }),
+    onNone: () => ({
+      model: baseModel,
+      commands: fetchSummaries(baseModel),
+    }),
     onSome: code => {
-      const intent: Intent = pipe(
-        flags.maybeSavedFriendGame,
-        Option.filter(saved => saved.code === code),
-        Option.match({
+      const intent: Intent = Option.match(
+        findRow(baseModel.friendGames, code),
+        {
           onNone: () => 'Join',
-          onSome: saved => saved.intent,
-        }),
+          onSome: row => row.intent,
+        },
       )
-      return {
-        model: modifyFields(baseModel, {
-          screen: () => friendScreen(code, intent),
-          maybeSavedFriendGame: () => Option.some({ code, intent }),
+      return Option.match(baseModel.maybePlayerName, {
+        onNone: () => ({
+          model: modifyFields(baseModel, {
+            screen: () =>
+              Screen.Naming({
+                draft: '',
+                next: AfterNaming.OpenGame({ code, intent }),
+              }),
+          }),
         }),
-        commands: [SaveFriendGame({ saved: { code, intent } })],
-      }
+        onSome: () => {
+          const friendGames = withGameFirst(baseModel.friendGames, code, intent)
+          return {
+            model: modifyFields(baseModel, {
+              screen: () => friendScreen(code, intent),
+              friendGames: () => friendGames,
+            }),
+            commands: [SaveFriendGames({ games: savedOf(friendGames) })],
+          }
+        },
+      })
     },
   })
 }
@@ -187,23 +238,55 @@ export const GenerateRoomCode = Command.define('GenerateRoomCode', {
   }).pipe(Effect.provide(BrowserCrypto.layerSecureRandom)),
 })
 
-export const SaveFriendGame = Command.define('SaveFriendGame', {
-  args: { saved: SavedFriendGame },
-  messages: [Message.CompletedSaveFriendGame],
-  execute: ({ saved }) =>
-    saveFriendGame(saved).pipe(
+export const SaveFriendGames = Command.define('SaveFriendGames', {
+  args: { games: Schema.Array(SavedFriendGame) },
+  messages: [Message.CompletedSaveFriendGames],
+  execute: ({ games }) =>
+    saveFriendGames(games).pipe(
       Effect.ignore,
-      Effect.as(Message.CompletedSaveFriendGame()),
+      Effect.as(Message.CompletedSaveFriendGames()),
     ),
 })
 
-export const ForgetFriendGame = Command.define('ForgetFriendGame', {
-  messages: [Message.CompletedForgetFriendGame],
-  execute: forgetFriendGame.pipe(
-    Effect.ignore,
-    Effect.as(Message.CompletedForgetFriendGame()),
-  ),
+export const SavePlayerName = Command.define('SavePlayerName', {
+  args: { name: Schema.String },
+  messages: [Message.CompletedSavePlayerName],
+  execute: ({ name }) =>
+    savePlayerName(name).pipe(
+      Effect.ignore,
+      Effect.as(Message.CompletedSavePlayerName()),
+    ),
 })
+
+// Asks a game's Room whose turn it is, for the menu. Offline, or with the
+// Room unreachable, the row just shows no status.
+export const FetchGameSummary = Command.define('FetchGameSummary', {
+  args: { code: Schema.String, deviceId: Schema.String },
+  messages: [Message.CompletedFetchGameSummary],
+  execute: ({ code, deviceId }) =>
+    Effect.gen(function* () {
+      const url = new URL(`/api/rooms/${code}/summary`, window.location.href)
+      url.searchParams.set('device', deviceId)
+      const response = yield* Effect.tryPromise(() =>
+        fetch(url, { cache: 'no-store' }),
+      )
+      if (!response.ok) {
+        return Option.none()
+      }
+      const text = yield* Effect.tryPromise(() => response.text())
+      return Option.some(yield* Schema.decodeEffect(GameSummaryJson)(text))
+    }).pipe(
+      Effect.catch(() => Effect.succeed(Option.none())),
+      Effect.map(maybeSummary =>
+        Message.CompletedFetchGameSummary({ code, maybeSummary }),
+      ),
+    ),
+})
+
+const fetchSummaries = (model: Model) =>
+  Array.map(model.friendGames, row =>
+    FetchGameSummary({ code: row.code, deviceId: model.deviceId }),
+  )
 
 // Keeps the address bar on the game being shown, so reloading the page or
 // sharing it from the browser lands in the same place.
@@ -395,29 +478,107 @@ const openFriendGame = (
   model: Model,
   code: string,
   intent: Intent,
-): UpdateReturn => ({
+): UpdateReturn => {
+  const friendGames = withGameFirst(model.friendGames, code, intent)
+  return {
+    model: modifyFields(model, {
+      screen: () => friendScreen(code, intent),
+      friendGames: () => friendGames,
+    }),
+    commands: [
+      SaveFriendGames({ games: savedOf(friendGames) }),
+      ShowUrl({ path: roomPath(code) }),
+    ],
+  }
+}
+
+const forgetFriendGame = (model: Model, code: string): UpdateReturn => {
+  const friendGames = withoutGame(model.friendGames, code)
+  return {
+    model: modifyFields(model, { friendGames: () => friendGames }),
+    commands: [SaveFriendGames({ games: savedOf(friendGames) })],
+  }
+}
+
+// The menu asks every game's Room for its status each time it appears.
+const goToMenu = (model: Model): UpdateReturn => {
+  const nextModel = modifyFields(model, { screen: () => Screen.Title() })
+  return {
+    model: nextModel,
+    commands: [ShowUrl({ path: '/' }), ...fetchSummaries(nextModel)],
+  }
+}
+
+const startFriendGame = (model: Model): UpdateReturn => ({
   model: modifyFields(model, {
-    screen: () => friendScreen(code, intent),
-    maybeSavedFriendGame: () => Option.some({ code, intent }),
+    screen: () => Screen.StartingFriendGame(),
   }),
-  commands: [
-    SaveFriendGame({ saved: { code, intent } }),
-    ShowUrl({ path: roomPath(code) }),
-  ],
+  commands: [GenerateRoomCode()],
 })
 
-const forgetCurrentFriendGame = (model: Model): UpdateReturn => ({
-  model: modifyFields(model, {
-    screen: () => Screen.Title(),
-    maybeSavedFriendGame: () => Option.none(),
-  }),
-  commands: [ForgetFriendGame(), ShowUrl({ path: '/' })],
-})
+const continueAfterNaming = (model: Model, next: AfterNaming): UpdateReturn =>
+  AfterNaming.match(next, {
+    StartGame: () => startFriendGame(model),
+    OpenGame: ({ code, intent }) => openFriendGame(model, code, intent),
+    BackToMenu: () => goToMenu(model),
+  })
 
-const leaveFriendGame = (model: Model): UpdateReturn => ({
-  model: modifyFields(model, { screen: () => Screen.Title() }),
-  commands: [ShowUrl({ path: '/' })],
-})
+// A friend game needs the player's name, so the other player sees who
+// they're playing. It's asked for once and remembered.
+const withPlayerName = (model: Model, next: AfterNaming): UpdateReturn =>
+  Option.match(model.maybePlayerName, {
+    onNone: () => ({
+      model: modifyFields(model, {
+        screen: () => Screen.Naming({ draft: '', next }),
+      }),
+    }),
+    onSome: () => continueAfterNaming(model, next),
+  })
+
+type NamingScreen = typeof Screen.Naming.Type
+
+const withNamingScreen = (
+  model: Model,
+  f: (screen: NamingScreen) => UpdateReturn,
+): UpdateReturn =>
+  Screen.matchOrElse(model.screen, { Naming: f }, () => ({ model }))
+
+const submitName = (model: Model, screen: NamingScreen): UpdateReturn =>
+  Option.match(cleanPlayerName(screen.draft), {
+    onNone: () => ({ model }),
+    onSome: name => {
+      const continued = continueAfterNaming(
+        modifyFields(model, { maybePlayerName: () => Option.some(name) }),
+        screen.next,
+      )
+      return {
+        model: continued.model,
+        commands: [SavePlayerName({ name }), ...(continued.commands ?? [])],
+      }
+    },
+  })
+
+// A Room that's gone (it expired) or that has no seat for this device drops
+// off the list.
+const receiveSummary = (
+  model: Model,
+  code: string,
+  summary: GameSummary,
+): UpdateReturn =>
+  GameSummary.guards.Missing(summary) || GameSummary.guards.NotSeated(summary)
+    ? forgetFriendGame(model, code)
+    : {
+        model: modifyFields(model, {
+          friendGames: rows =>
+            Array.map(rows, row =>
+              row.code === code
+                ? modifyFields(row, {
+                    status: () => GameStatus.Known({ summary }),
+                  })
+                : row,
+            ),
+        }),
+      }
 
 // Sends a Move for the friend game on screen. The local Game doesn't change:
 // the Room applies the Move and sends the new Game back to both players.
@@ -473,17 +634,17 @@ const receiveServerMessage = (
           }),
         ),
       }),
-      Refused: ({ reason }) => ({
-        model: modifyFields(model, {
-          screen: () =>
+      Refused: ({ reason }) =>
+        forgetFriendGame(
+          setFriendScreen(
+            model,
             modifyFields(screen, {
               room: () => FriendRoom.Refused({ reason }),
               connection: () => Connection.Disconnected(),
             }),
-          maybeSavedFriendGame: () => Option.none(),
-        }),
-        commands: [ForgetFriendGame()],
-      }),
+          ),
+          screen.code,
+        ),
     }),
   )
 
@@ -509,13 +670,6 @@ const markDisconnected = (model: Model): UpdateReturn =>
       modifyFields(screen, { connection: () => Connection.Disconnected() }),
     ),
   }))
-
-const isFinishedFriendGame = (screen: FriendScreen): boolean =>
-  FriendRoom.matchOrElse(
-    screen.room,
-    { Playing: ({ game }) => Phase.guards.GameOver(game.phase) },
-    () => false,
-  )
 
 const setInvite = (model: Model, invite: Invite): Model =>
   Screen.matchOrElse(
@@ -591,22 +745,53 @@ export const update = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
     ClickedPlayBot: () => startBotGame(model),
 
-    ClickedPlayFriend: () => ({
-      model: modifyFields(model, {
-        screen: () => Screen.StartingFriendGame(),
-      }),
-      commands: [GenerateRoomCode()],
-    }),
+    ClickedPlayFriend: () => withPlayerName(model, AfterNaming.StartGame()),
 
     CompletedGenerateRoomCode: ({ code }) =>
       Screen.guards.StartingFriendGame(model.screen)
         ? openFriendGame(model, code, 'Host')
         : { model },
 
-    ClickedResumeFriendGame: () =>
-      Option.match(model.maybeSavedFriendGame, {
+    ClickedResumeFriendGame: ({ code }) =>
+      Option.match(findRow(model.friendGames, code), {
         onNone: () => ({ model }),
-        onSome: ({ code, intent }) => openFriendGame(model, code, intent),
+        onSome: row =>
+          withPlayerName(
+            model,
+            AfterNaming.OpenGame({ code: row.code, intent: row.intent }),
+          ),
+      }),
+
+    ClickedRemoveFriendGame: ({ code }) => forgetFriendGame(model, code),
+
+    ClickedChangeName: () => ({
+      model: modifyFields(model, {
+        screen: () =>
+          Screen.Naming({
+            draft: Option.getOrElse(model.maybePlayerName, () => ''),
+            next: AfterNaming.BackToMenu(),
+          }),
+      }),
+    }),
+
+    UpdatedNameDraft: ({ value }) =>
+      withNamingScreen(model, screen => ({
+        model: modifyFields(model, {
+          screen: () => modifyFields(screen, { draft: () => value }),
+        }),
+      })),
+
+    SubmittedName: () =>
+      withNamingScreen(model, screen => submitName(model, screen)),
+
+    ClickedCancelNaming: () => goToMenu(model),
+
+    CompletedSavePlayerName: () => ({ model }),
+
+    CompletedFetchGameSummary: ({ code, maybeSummary }) =>
+      Option.match(maybeSummary, {
+        onNone: () => ({ model }),
+        onSome: summary => receiveSummary(model, code, summary),
       }),
 
     ClickedPlayAgain: () =>
@@ -717,21 +902,13 @@ export const update = (model: Model, message: Message) =>
     ClickedLeaveTable: () =>
       Screen.matchOrElse(
         model.screen,
-        {
-          Friend: screen =>
-            isFinishedFriendGame(screen) ||
-            FriendRoom.guards.Refused(screen.room)
-              ? forgetCurrentFriendGame(model)
-              : leaveFriendGame(model),
-        },
+        { Friend: () => goToMenu(model) },
         () => ({
           model: modifyFields(model, { screen: () => Screen.Title() }),
         }),
       ),
 
-    CompletedSaveFriendGame: () => ({ model }),
-
-    CompletedForgetFriendGame: () => ({ model }),
+    CompletedSaveFriendGames: () => ({ model }),
 
     CompletedShowUrl: () => ({ model }),
 
@@ -770,7 +947,11 @@ export const update = (model: Model, message: Message) =>
 
     // Phones drop sockets in the background, and the other player may have
     // moved since, so coming back to the app fetches the game again.
-    ReturnedToApp: () => reconnect(model),
+    // On the menu, it refreshes whose turn it is instead.
+    ReturnedToApp: () =>
+      Screen.guards.Title(model.screen)
+        ? { model, commands: fetchSummaries(model) }
+        : reconnect(model),
 
     LeftApp: () =>
       withFriendScreen(model, screen =>

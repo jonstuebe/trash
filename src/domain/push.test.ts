@@ -4,9 +4,25 @@ import { describe, expect, it } from 'vitest'
 
 import { Phase, drawFromStock, newFriendGame, trashHeld } from './game'
 import { alertsFor, seatToAct } from './push'
-import { GUEST_SEAT, HOST_SEAT, openRoom, seatOfDevice, settle } from './room'
+import {
+  GUEST_SEAT,
+  HOST_SEAT,
+  openRoom,
+  seatOfDevice,
+  settle,
+  withNames,
+} from './room'
 
-const dealt = () => settle(newFriendGame(), cards => cards)
+const namedRoom = modifyFields(openRoom('host'), {
+  maybeHostName: () => Option.some('Sam'),
+  maybeGuestName: () => Option.some('Alex'),
+})
+
+const dealt = () =>
+  withNames(
+    namedRoom,
+    settle(newFriendGame(), cards => cards),
+  )
 
 describe('alertsFor', () => {
   it('tells the host when the guest arrives and the game starts', () => {
@@ -15,7 +31,7 @@ describe('alertsFor', () => {
       {
         seat: HOST_SEAT,
         title: 'Your turn',
-        body: "Your friend joined. It's your turn.",
+        body: "Alex joined. It's your turn.",
       },
     ])
   })
@@ -41,7 +57,7 @@ describe('alertsFor', () => {
       {
         seat: GUEST_SEAT,
         title: 'Your turn',
-        body: "Your friend played. It's your turn.",
+        body: "Sam played. It's your turn.",
       },
     ])
   })
@@ -55,7 +71,7 @@ describe('alertsFor', () => {
       {
         seat: HOST_SEAT,
         title: 'Game over',
-        body: 'Your friend won this one.',
+        body: 'Alex won this one.',
       },
       { seat: GUEST_SEAT, title: 'Game over', body: 'You won!' },
     ])

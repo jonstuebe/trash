@@ -1,4 +1,4 @@
-import { Array, Option, Schema } from 'effect'
+import { Array, Option, Schema, pipe } from 'effect'
 
 import { type Game, Phase } from './game'
 
@@ -57,22 +57,38 @@ export const seatToAct = (game: Game): Option.Option<number> =>
     ? Option.some(game.currentIndex)
     : Option.none()
 
-const turnBody = (maybeBefore: Option.Option<Game>): string =>
+// The other player's name, as the Room has it (see withNames in room.ts).
+const opponentNameOf = (game: Game, seat: number): string =>
+  pipe(
+    game.players,
+    Array.filter((_player, index) => index !== seat),
+    Array.head,
+    Option.match({
+      onNone: () => 'Your friend',
+      onSome: player => player.name,
+    }),
+  )
+
+const turnBody = (
+  maybeBefore: Option.Option<Game>,
+  opponentName: string,
+): string =>
   Option.match(maybeBefore, {
-    onNone: () => "Your friend joined. It's your turn.",
+    onNone: () => `${opponentName} joined. It's your turn.`,
     onSome: before =>
       Phase.matchOrElse(
         before.phase,
         {
-          GameOver: () => "Your friend started a new game. It's your turn.",
+          GameOver: () => `${opponentName} started a new game. It's your turn.`,
           RoundOver: () => "A new round started. It's your turn.",
         },
-        () => "Your friend played. It's your turn.",
+        () => `${opponentName} played. It's your turn.`,
       ),
   })
 
 // Who to tell about the change from one Game to the next. maybeBefore is
-// none when the guest's arrival started the game.
+// none when the guest's arrival started the game. Both Games carry the
+// players' own names.
 export const alertsFor = (
   maybeBefore: Option.Option<Game>,
   after: Game,
@@ -86,7 +102,10 @@ export const alertsFor = (
     return Array.map(after.players, (_player, seat) => ({
       seat,
       title: 'Game over',
-      body: seat === winnerIndex ? 'You won!' : 'Your friend won this one.',
+      body:
+        seat === winnerIndex
+          ? 'You won!'
+          : `${opponentNameOf(after, seat)} won this one.`,
     }))
   }
 
@@ -95,6 +114,12 @@ export const alertsFor = (
     onSome: seat =>
       Option.getOrUndefined(Option.flatMap(maybeBefore, seatToAct)) === seat
         ? []
-        : [{ seat, title: 'Your turn', body: turnBody(maybeBefore) }],
+        : [
+            {
+              seat,
+              title: 'Your turn',
+              body: turnBody(maybeBefore, opponentNameOf(after, seat)),
+            },
+          ],
   })
 }

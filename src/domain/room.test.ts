@@ -1,21 +1,30 @@
-import { Array, Option } from 'effect'
+import { Array, Option, Schema } from 'effect'
 import { modifyFields } from 'foldkit/struct'
 import { describe, expect, test } from 'vitest'
 
 import { type Card } from './card'
 import { type Game, Phase, Slot } from './game'
 import {
+  FINISHED_GAME_LIFETIME,
   GUEST_SEAT,
+  GameSummary,
   HOST_SEAT,
+  IDLE_GAME_LIFETIME,
   Move,
   type Room,
+  RoomJson,
   RoomView,
   type Seating,
+  UNJOINED_INVITE_LIFETIME,
   applyMove,
+  cleanPlayerName,
+  lifetimeOf,
+  nameSeat,
   openRoom,
   roomCodeFromPath,
   seat,
   settle,
+  summaryOf,
   viewOf,
 } from './room'
 
@@ -195,5 +204,142 @@ describe('settle', () => {
     const game = gameOf(startedRoom())
 
     expect(settle(game, unshuffled)).toBe(game)
+  })
+})
+
+describe('turn order', () => {
+  test('the player who sent the invite goes first', () => {
+    const game = gameOf(startedRoom())
+    expect(game.currentIndex).toBe(HOST_SEAT)
+    expect(Phase.guards.AwaitingDraw(game.phase)).toBe(true)
+  })
+
+  test('a rematch starts with the player who sent the invite', () => {
+    const over = modifyFields(gameOf(startedRoom()), {
+      currentIndex: () => GUEST_SEAT,
+      phase: () => Phase.GameOver({ winnerIndex: GUEST_SEAT }),
+    })
+    const rematch = applyMove(
+      over,
+      GUEST_SEAT,
+      { sequence: over.sequence, move: Move.Rematch() },
+      unshuffled,
+    )
+    expect(rematch.currentIndex).toBe(HOST_SEAT)
+  })
+})
+
+describe('names', () => {
+  test('a name is trimmed, kept to one line, and capped', () => {
+    expect(cleanPlayerName('  Sam  ')).toEqual(Option.some('Sam'))
+    expect(cleanPlayerName('Mary\n  Jane')).toEqual(Option.some('Mary Jane'))
+    expect(cleanPlayerName('   ')).toEqual(Option.none())
+    expect(cleanPlayerName('A'.repeat(40))).toEqual(Option.some('A'.repeat(20)))
+  })
+
+  test('each player sees the other by the name they gave', () => {
+    const room = nameSeat(
+      nameSeat(startedRoom(), HOST_SEAT, Option.some('Sam')),
+      GUEST_SEAT,
+      Option.some('Alex'),
+    )
+    const view = viewOf(room)
+    if (!RoomView.guards.Playing(view)) {
+      throw new Error('expected a game')
+    }
+    expect(Array.map(view.game.players, player => player.name)).toEqual([
+      'Sam',
+      'Alex',
+    ])
+  })
+
+  test('connecting without a name keeps the one the seat had', () => {
+    const named = nameSeat(startedRoom(), GUEST_SEAT, Option.some('Alex'))
+    expect(nameSeat(named, GUEST_SEAT, Option.none())).toBe(named)
+  })
+
+  test('a room saved before players had names still loads', () => {
+    const encoded = Schema.encodeSync(RoomJson)(startedRoom())
+    const legacy = JSON.stringify(
+      Object.fromEntries(
+        Object.entries(JSON.parse(encoded)).filter(
+          ([key]) => key !== 'maybeHostName' && key !== 'maybeGuestName',
+        ),
+      ),
+    )
+    const decoded = Schema.decodeSync(RoomJson)(legacy)
+    expect(decoded.maybeHostName).toEqual(Option.none())
+    expect(decoded.maybeGuestName).toEqual(Option.none())
+    expect(decoded.maybeGame).toEqual(startedRoom().maybeGame)
+  })
+})
+
+describe('summaryOf', () => {
+  const named = (): Room =>
+    nameSeat(
+      nameSeat(startedRoom(), HOST_SEAT, Option.some('Sam')),
+      GUEST_SEAT,
+      Option.some('Alex'),
+    )
+
+  test('a missing room, or one without this device, says so', () => {
+    expect(summaryOf(Option.none(), HOST)).toEqual(GameSummary.Missing())
+    expect(summaryOf(Option.some(named()), STRANGER)).toEqual(
+      GameSummary.NotSeated(),
+    )
+  })
+
+  test('the host waits until the guest arrives', () => {
+    expect(summaryOf(Option.some(openRoom(HOST)), HOST)).toEqual(
+      GameSummary.WaitingForGuest(),
+    )
+  })
+
+  test("tells each player whose turn it is, by the other one's name", () => {
+    const room = Option.some(named())
+    expect(summaryOf(room, HOST)).toEqual(
+      GameSummary.YourTurn({ opponentName: 'Alex', round: 1 }),
+    )
+    expect(summaryOf(room, GUEST)).toEqual(
+      GameSummary.TheirTurn({ opponentName: 'Sam', round: 1 }),
+    )
+  })
+
+  test('between rounds and after the game, nobody is waited on', () => {
+    const at = (phase: Phase): Option.Option<Room> =>
+      Option.some(
+        modifyFields(named(), {
+          maybeGame: maybeGame =>
+            Option.map(maybeGame, game =>
+              modifyFields(game, { phase: () => phase }),
+            ),
+        }),
+      )
+    expect(
+      summaryOf(at(Phase.RoundOver({ finisherIndexes: [0] })), GUEST),
+    ).toEqual(GameSummary.BetweenRounds({ opponentName: 'Sam', round: 1 }))
+    const over = at(Phase.GameOver({ winnerIndex: GUEST_SEAT }))
+    expect(summaryOf(over, GUEST)).toEqual(
+      GameSummary.Over({ opponentName: 'Sam', didWin: true }),
+    )
+    expect(summaryOf(over, HOST)).toEqual(
+      GameSummary.Over({ opponentName: 'Alex', didWin: false }),
+    )
+  })
+})
+
+describe('lifetimeOf', () => {
+  test('an unanswered invite and a finished game go after a week, a game in play after a month', () => {
+    expect(lifetimeOf(openRoom(HOST))).toEqual(UNJOINED_INVITE_LIFETIME)
+    expect(lifetimeOf(startedRoom())).toEqual(IDLE_GAME_LIFETIME)
+    const finished = modifyFields(startedRoom(), {
+      maybeGame: maybeGame =>
+        Option.map(maybeGame, game =>
+          modifyFields(game, {
+            phase: () => Phase.GameOver({ winnerIndex: HOST_SEAT }),
+          }),
+        ),
+    })
+    expect(lifetimeOf(finished)).toEqual(FINISHED_GAME_LIFETIME)
   })
 })

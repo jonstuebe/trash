@@ -1,4 +1,4 @@
-import { Array, Option, Schema } from 'effect'
+import { Array, Duration, Option, Schema, pipe } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 import { modifyFields } from 'foldkit/struct'
 
@@ -18,6 +18,7 @@ import {
   takeDiscard,
   trashHeld,
 } from './game'
+import { seatToAct } from './push'
 
 // A friend game lives in a Room, one Durable Object per invite code. The host
 // is the device that opened the room; the guest is the first other device to
@@ -92,12 +93,33 @@ export const ServerMessageJson = Schema.fromJsonString(
   Schema.toCodecJson(ServerMessage),
 )
 
+// NAMES
+
+// Each player types their own name once; the device sends it every time it
+// connects, and the Room shows it to the other player.
+export const PLAYER_NAME_MAX_LENGTH = 20
+
+export const cleanPlayerName = (raw: string): Option.Option<string> =>
+  pipe(
+    raw
+      .replace(/[\p{Cc}\p{Cf}]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    name => Array.fromIterable(name).slice(0, PLAYER_NAME_MAX_LENGTH).join(''),
+    name => name.trim(),
+    Option.liftPredicate(name => name !== ''),
+  )
+
 // ROOM
 
+// The names are optional keys so rooms saved before players had names still
+// load.
 export const Room = Schema.Struct({
   hostId: Schema.String,
   maybeGuestId: Schema.Option(Schema.String),
   maybeGame: Schema.Option(Game),
+  maybeHostName: Schema.OptionFromOptionalKey(Schema.String),
+  maybeGuestName: Schema.OptionFromOptionalKey(Schema.String),
 })
 export type Room = typeof Room.Type
 
@@ -107,7 +129,39 @@ export const openRoom = (hostId: string): Room => ({
   hostId,
   maybeGuestId: Option.none(),
   maybeGame: Option.none(),
+  maybeHostName: Option.none(),
+  maybeGuestName: Option.none(),
 })
+
+// Records the name a seated device connected with. A device that sent no
+// name keeps the one it had.
+export const nameSeat = (
+  room: Room,
+  seatIndex: number,
+  maybeName: Option.Option<string>,
+): Room => {
+  if (Option.isNone(maybeName)) {
+    return room
+  }
+  return seatIndex === HOST_SEAT
+    ? modifyFields(room, { maybeHostName: () => maybeName })
+    : modifyFields(room, { maybeGuestName: () => maybeName })
+}
+
+const maybeNameOf = (room: Room, seatIndex: number): Option.Option<string> =>
+  seatIndex === HOST_SEAT ? room.maybeHostName : room.maybeGuestName
+
+// The Game with each player's own name in place of the stand-in.
+export const withNames = (room: Room, game: Game): Game =>
+  modifyFields(game, {
+    players: players =>
+      Array.map(players, (player, seatIndex) =>
+        Option.match(maybeNameOf(room, seatIndex), {
+          onNone: () => player,
+          onSome: name => modifyFields(player, { name: () => name }),
+        }),
+      ),
+  })
 
 export type Shuffle = (cards: ReadonlyArray<Card>) => ReadonlyArray<Card>
 
@@ -221,5 +275,82 @@ export const applyMove = (
 export const viewOf = (room: Room): RoomView =>
   Option.match(room.maybeGame, {
     onNone: () => RoomView.WaitingForGuest(),
-    onSome: game => RoomView.Playing({ game: redact(game) }),
+    onSome: game => RoomView.Playing({ game: redact(withNames(room, game)) }),
+  })
+
+// SUMMARY
+
+// What the menu shows for one game, without its cards.
+export const GameSummary = defineTaggedUnion({
+  Missing: {},
+  NotSeated: {},
+  WaitingForGuest: {},
+  YourTurn: { opponentName: Schema.String, round: Schema.Number },
+  TheirTurn: { opponentName: Schema.String, round: Schema.Number },
+  BetweenRounds: { opponentName: Schema.String, round: Schema.Number },
+  Over: { opponentName: Schema.String, didWin: Schema.Boolean },
+})
+export type GameSummary = typeof GameSummary.Type
+
+export const GameSummaryJson = Schema.fromJsonString(
+  Schema.toCodecJson(GameSummary),
+)
+
+const otherSeat = (seatIndex: number): number =>
+  seatIndex === HOST_SEAT ? GUEST_SEAT : HOST_SEAT
+
+export const summaryOf = (
+  maybeRoom: Option.Option<Room>,
+  deviceId: string,
+): GameSummary =>
+  Option.match(maybeRoom, {
+    onNone: () => GameSummary.Missing(),
+    onSome: room =>
+      Option.match(seatOfDevice(room, deviceId), {
+        onNone: () => GameSummary.NotSeated(),
+        onSome: seatIndex =>
+          Option.match(room.maybeGame, {
+            onNone: () => GameSummary.WaitingForGuest(),
+            onSome: unnamed => {
+              const game = withNames(room, unnamed)
+              const opponentName = Array.getUnsafe(
+                game.players,
+                otherSeat(seatIndex),
+              ).name
+              const round = game.round
+              if (Phase.guards.GameOver(game.phase)) {
+                return GameSummary.Over({
+                  opponentName,
+                  didWin: game.phase.winnerIndex === seatIndex,
+                })
+              }
+              return Option.match(seatToAct(game), {
+                onNone: () =>
+                  GameSummary.BetweenRounds({ opponentName, round }),
+                onSome: actingSeat =>
+                  actingSeat === seatIndex
+                    ? GameSummary.YourTurn({ opponentName, round })
+                    : GameSummary.TheirTurn({ opponentName, round }),
+              })
+            },
+          }),
+      }),
+  })
+
+// EXPIRY
+
+// A Room deletes itself once nobody has touched it for a while. Every change
+// pushes the deadline back, so only a game both players walked away from
+// expires.
+export const UNJOINED_INVITE_LIFETIME = Duration.days(7)
+export const IDLE_GAME_LIFETIME = Duration.days(30)
+export const FINISHED_GAME_LIFETIME = Duration.days(7)
+
+export const lifetimeOf = (room: Room): Duration.Duration =>
+  Option.match(room.maybeGame, {
+    onNone: () => UNJOINED_INVITE_LIFETIME,
+    onSome: game =>
+      Phase.guards.GameOver(game.phase)
+        ? FINISHED_GAME_LIFETIME
+        : IDLE_GAME_LIFETIME,
   })

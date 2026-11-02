@@ -4,7 +4,7 @@ import { defineMessageUnion } from 'foldkit/message'
 import { Dialog } from '@foldkit/ui'
 
 import { Card } from './domain/card'
-import { ServerMessage } from './domain/room'
+import { GameSummary, ServerMessage } from './domain/room'
 
 export const ShareOutcome = Schema.Literals([
   'Shared',
@@ -27,7 +27,17 @@ export type AlertsPermission = typeof AlertsPermission.Type
 export const Message = defineMessageUnion({
   ClickedPlayBot: {},
   ClickedPlayFriend: {},
-  ClickedResumeFriendGame: {},
+  ClickedResumeFriendGame: { code: Schema.String },
+  ClickedRemoveFriendGame: { code: Schema.String },
+  ClickedChangeName: {},
+  UpdatedNameDraft: { value: Schema.String },
+  SubmittedName: {},
+  ClickedCancelNaming: {},
+  CompletedSavePlayerName: {},
+  CompletedFetchGameSummary: {
+    code: Schema.String,
+    maybeSummary: Schema.Option(GameSummary),
+  },
   ClickedHowToPlay: {},
   ClickedGuideNext: {},
   ClickedGuidePage: { page: Schema.Number },
@@ -47,8 +57,7 @@ export const Message = defineMessageUnion({
   ClickedPlayAgain: {},
   ClickedLeaveTable: {},
   CompletedGenerateRoomCode: { code: Schema.String },
-  CompletedSaveFriendGame: {},
-  CompletedForgetFriendGame: {},
+  CompletedSaveFriendGames: {},
   CompletedShowUrl: {},
   ConnectedRoomSocket: {},
   FailedConnectRoomSocket: {},
