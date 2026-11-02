@@ -17,6 +17,9 @@
   --glass-shine: rgba(255, 255, 255, 0.22);
   --accent: #5e5ce6;
   --spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  /* UIKit's sheet presentation curve: fast start, long critically damped
+     settle, no overshoot. */
+  --sheet-curve: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --column: min(100vw, 440px);
   --gutter: 16px;
@@ -47,6 +50,13 @@
     system-ui, 'Helvetica Neue', sans-serif;
   --font-rounded:
     ui-rounded, 'SF Pro Rounded', -apple-system, system-ui, sans-serif;
+}
+
+/* Lets the aurora blobs cross-fade when the turn passes to another player. */
+@property --blob {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
 }
 
 @supports (height: 100dvh) {
@@ -100,41 +110,82 @@ button:focus-visible {
   isolation: isolate;
 }
 
-/* GLASS */
+/* GLASS
+   A Liquid Glass approximation. The material is mostly clear: a light blur
+   that lifts and saturates what's behind it, a specular rim that's
+   brightest at the top-left and bottom-right, and a soft inner glow. Pressing
+   an interactive piece of glass makes it swell and brighten, the way iOS
+   does, instead of shrinking. */
 
-.glass,
-.glass-strong {
+.glass {
   position: relative;
-  background: var(--glass-fill);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  backdrop-filter: blur(28px) saturate(180%);
+  isolation: isolate;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.13) 0%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  -webkit-backdrop-filter: blur(12px) saturate(180%) brightness(1.1);
+  backdrop-filter: blur(12px) saturate(180%) brightness(1.1);
   box-shadow:
-    inset 0 0.5px 0 0 var(--glass-shine),
-    inset 0 0 0 0.5px var(--glass-edge),
-    0 10px 30px -12px rgba(0, 0, 0, 0.6);
-}
-
-.glass-strong {
-  background: var(--glass-fill-strong);
-  -webkit-backdrop-filter: blur(40px) saturate(190%);
-  backdrop-filter: blur(40px) saturate(190%);
+    inset 0 1px 1px -0.5px rgba(255, 255, 255, 0.5),
+    inset 0 -1px 1px -0.5px rgba(255, 255, 255, 0.12),
+    inset 0 0 12px rgba(255, 255, 255, 0.04),
+    0 6px 20px -8px rgba(0, 0, 0, 0.55);
 }
 
 .glass::after,
-.glass-strong::after {
+.material::after {
   content: '';
   position: absolute;
   inset: 0;
+  z-index: 1;
+  padding: 1px;
   border-radius: inherit;
   pointer-events: none;
   background: linear-gradient(
-    160deg,
-    rgba(255, 255, 255, 0.14) 0%,
-    rgba(255, 255, 255, 0.02) 38%,
-    rgba(255, 255, 255, 0) 60%,
-    rgba(255, 255, 255, 0.05) 100%
+    135deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.1) 30%,
+    rgba(255, 255, 255, 0) 50%,
+    rgba(255, 255, 255, 0.08) 70%,
+    rgba(255, 255, 255, 0.32) 100%
   );
-  mix-blend-mode: screen;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+button.glass {
+  transition:
+    transform 0.4s var(--spring),
+    background-color 0.2s,
+    opacity 0.2s;
+}
+
+button.glass:active:not(:disabled) {
+  transform: scale(1.06);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.24) 0%,
+    rgba(255, 255, 255, 0.1) 100%
+  );
+}
+
+/* The thicker material sheets are made of: dark enough to read text on,
+   still showing colour through. */
+.material {
+  position: relative;
+  background: rgba(30, 30, 34, 0.74);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  box-shadow:
+    inset 0 1px 1px -0.5px rgba(255, 255, 255, 0.35),
+    0 -10px 50px -12px rgba(0, 0, 0, 0.6);
 }
 
 /* AURORA */
@@ -143,16 +194,25 @@ button:focus-visible {
   position: fixed;
   inset: -20%;
   z-index: -1;
-  filter: blur(70px) saturate(140%);
-  opacity: 0.55;
+  opacity: 0.9;
   pointer-events: none;
 }
 
 .blob {
   position: absolute;
   border-radius: 50%;
-  transition: background-color 1.2s var(--ease-out);
+  /* Soft edges come from the gradient, not filter: blur(). A live blur over a
+     full-screen animated layer stalls Mobile Safari's compositor, which shows
+     up as lag when a sheet opens over it. */
+  background: radial-gradient(
+    closest-side,
+    var(--blob) 0%,
+    color-mix(in oklab, var(--blob) 45%, transparent) 45%,
+    transparent 100%
+  );
+  transition: --blob 1.2s var(--ease-out);
   animation: drift 22s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
 .blob-a {
@@ -160,7 +220,7 @@ button:focus-visible {
   height: 60vmax;
   left: -10%;
   top: 30%;
-  background: color-mix(in oklab, var(--accent) 70%, transparent);
+  --blob: color-mix(in oklab, var(--accent) 70%, transparent);
 }
 
 .blob-b {
@@ -168,7 +228,7 @@ button:focus-visible {
   height: 46vmax;
   right: -8%;
   top: -6%;
-  background: color-mix(in oklab, var(--accent) 35%, #1a1a40);
+  --blob: color-mix(in oklab, var(--accent) 35%, #1a1a40);
   animation-duration: 28s;
   animation-delay: -6s;
 }
@@ -178,7 +238,7 @@ button:focus-visible {
   height: 40vmax;
   right: 10%;
   bottom: -14%;
-  background: color-mix(in oklab, var(--accent) 45%, #401a2e);
+  --blob: color-mix(in oklab, var(--accent) 45%, #401a2e);
   animation-duration: 34s;
   animation-delay: -12s;
 }
@@ -211,8 +271,8 @@ button:focus-visible {
     background-color 0.2s;
 }
 
-.pill:active:not(:disabled) {
-  transform: scale(0.96);
+.pill.primary:active:not(:disabled) {
+  transform: scale(1.04);
 }
 
 .pill:disabled {
@@ -477,12 +537,20 @@ button:focus-visible {
 }
 
 .round-button {
-  width: 40px;
-  height: 40px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  font-size: 16px;
+  font-family: var(--font-rounded);
+  font-size: 20px;
   font-weight: 600;
-  color: var(--label-2);
+  color: var(--label);
+}
+
+.xmark {
+  width: 17px;
+  height: 17px;
 }
 
 .round-title {
@@ -909,9 +977,15 @@ button:focus-visible {
   margin-top: 12px;
 }
 
-/* SHEETS */
+/* SHEETS
+   iOS 26 style: the sheet floats a few points in from the screen edges with
+   rounded corners all round, rises on UIKit's sheet curve, and the screen
+   behind it recedes. The How to play sheet is a Foldkit Dialog, whose
+   data-closed / data-enter / data-leave attributes drive the transitions
+   below; the round and game over sheets just animate in. */
 
-.sheet-layer {
+.sheet-layer,
+.sheet-dialog[open] {
   position: fixed;
   inset: 0;
   z-index: 10;
@@ -920,11 +994,28 @@ button:focus-visible {
   justify-content: center;
 }
 
+.sheet-dialog {
+  margin: 0;
+  color: inherit;
+}
+
 .sheet-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  animation: fade-in 0.3s backwards;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.sheet-layer .sheet-scrim {
+  animation: fade-in 0.4s var(--sheet-curve) backwards;
+}
+
+.sheet-dialog .sheet-scrim {
+  opacity: calc(1 - var(--sheet-progress, 0));
+  transition: opacity 0.5s var(--sheet-curve);
+}
+
+.sheet-dialog .sheet-scrim[data-closed] {
+  opacity: 0;
 }
 
 @keyframes fade-in {
@@ -934,41 +1025,100 @@ button:focus-visible {
 }
 
 .sheet {
+  --sheet-inset: 8px;
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  width: 100%;
+  width: calc(100% - 2 * var(--sheet-inset));
   max-width: 440px;
+  max-height: calc(var(--app-h) - env(safe-area-inset-top) - 24px);
   box-sizing: border-box;
-  padding: 10px 20px calc(env(safe-area-inset-bottom) + 20px);
-  border-radius: 38px 38px 0 0;
-  animation: sheet-up 0.55s var(--ease-out) backwards;
+  margin-bottom: max(var(--sheet-inset), env(safe-area-inset-bottom) - 26px);
+  padding: 6px 20px 22px;
+  border-radius: 40px;
+  touch-action: none;
+}
+
+.sheet-layer .sheet {
+  animation: sheet-up 0.5s var(--sheet-curve) backwards;
+}
+
+.sheet-dialog .sheet {
+  transform: translate3d(0, var(--sheet-drag, 0px), 0);
+  transition: transform 0.5s var(--sheet-curve);
+  will-change: transform;
+}
+
+.sheet-dialog .sheet[data-closed] {
+  transform: translate3d(0, calc(100% + 40px), 0);
+}
+
+.sheet-dialog .sheet[data-leave] {
+  transition-duration: 0.38s;
+}
+
+.sheet-dialog .sheet[data-dragging] {
+  transition: none;
 }
 
 @media (min-width: 480px) {
-  .sheet-layer {
+  .sheet-layer,
+  .sheet-dialog[open] {
     align-items: center;
   }
   .sheet {
-    border-radius: 38px;
-    padding-bottom: 24px;
+    margin-bottom: 0;
   }
 }
 
 @keyframes sheet-up {
   from {
-    transform: translateY(100%);
+    transform: translate3d(0, calc(100% + 40px), 0);
   }
 }
 
+/* The presenting screen recedes, as it does behind a UIKit page sheet. */
+.app > .title-screen,
+.app > .table {
+  transition:
+    transform 0.5s var(--sheet-curve),
+    border-radius 0.5s var(--sheet-curve);
+  transform-origin: 50% 100%;
+}
+
+.app.is-presenting > .title-screen,
+.app.is-presenting > .table {
+  transform: scale(0.94);
+  border-radius: 40px;
+}
+
 .grabber {
-  width: 38px;
+  flex: none;
+  width: 36px;
   height: 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.28);
-  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* A sheet's navigation bar: inline title centred, glass close button
+   trailing. */
+.sheet-bar {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  width: calc(100% + 16px);
+  margin-top: -4px;
+}
+
+.sheet-bar-title {
+  grid-column: 2;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-align: center;
 }
 
 .sheet-eyebrow {
@@ -1057,14 +1207,13 @@ button:focus-visible {
 }
 
 .close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 32px;
-  height: 32px;
+  grid-column: 3;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  font-size: 13px;
-  color: var(--label-2);
+  color: var(--label);
 }
 
 .guide-panel {
@@ -1073,8 +1222,8 @@ button:focus-visible {
   place-items: center;
   width: 100%;
   height: 230px;
-  margin-top: 22px;
-  border-radius: 34px;
+  margin-top: 6px;
+  border-radius: 28px;
   animation: panel-in 0.45s var(--ease-out) backwards;
 }
 
@@ -1147,9 +1296,9 @@ button:focus-visible {
 }
 
 .guide-headline {
-  margin: 30px 0 0;
+  margin: 24px 0 0;
   min-height: 2.4em;
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 500;
   line-height: 1.15;
   letter-spacing: -0.02em;
@@ -1194,11 +1343,11 @@ button:focus-visible {
 
 @media (max-height: 720px) {
   :root {
-    --table-fixed: 300px;
+    --table-fixed: 304px;
   }
 
   .table-header {
-    height: 40px;
+    height: 44px;
   }
 
   .opponent-name {

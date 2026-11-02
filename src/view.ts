@@ -1,6 +1,8 @@
 import { Array, Match, Option, Result, pipe } from 'effect'
 import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 
+import { Dialog } from '@foldkit/ui'
+
 import {
   type Card,
   type Suit,
@@ -24,7 +26,8 @@ import {
   topDiscard,
 } from './domain/game'
 import { Message } from './message'
-import { GUIDE_PAGE_COUNT, Guide, type Model, Screen } from './model'
+import { GUIDE_PAGE_COUNT, type Model, Screen } from './model'
+import { DragSheetToDismiss } from './sheetGesture'
 
 type H = HtmlBuilder<Message>
 
@@ -45,6 +48,21 @@ const suitIcon = (suit: Suit, h: H): Html =>
   h.svg(
     [h.Class('suit'), h.ViewBox('0 0 24 24'), h.AriaHidden(true)],
     [h.path([h.D(SUIT_PATHS[suit]), h.Fill('currentColor')])],
+  )
+
+// SF Symbols' xmark, drawn as two rounded strokes.
+const xmarkIcon = (h: H): Html =>
+  h.svg(
+    [h.Class('icon xmark'), h.ViewBox('0 0 24 24'), h.AriaHidden(true)],
+    [
+      h.path([
+        h.D('M6.5 6.5l11 11M17.5 6.5l-11 11'),
+        h.Fill('none'),
+        h.Stroke('currentColor'),
+        h.StrokeWidth('2.6'),
+        h.StrokeLinecap('round'),
+      ]),
+    ],
   )
 
 const trashIcon = (h: H): Html =>
@@ -549,7 +567,7 @@ const sheet = (children: ReadonlyArray<Html>, label: string, h: H): Html =>
       h.div([h.Class('sheet-scrim')]),
       h.div(
         [
-          h.Class('sheet glass-strong'),
+          h.Class('sheet material'),
           h.Role('dialog'),
           h.AriaModal(true),
           h.AriaLabel(label),
@@ -727,69 +745,85 @@ const GUIDE_PAGES: ReadonlyArray<GuidePage> = [
   },
 ]
 
-const guideSheet = (model: Model, page: number, h: H): Html => {
+const guideContent = (model: Model, render: Dialog.RenderInfo, h: H) => {
+  const page = model.guidePage
   const guidePage = Array.getUnsafe(GUIDE_PAGES, page)
   const isLastPage = page === GUIDE_PAGE_COUNT - 1
 
-  return h.div(
-    [h.Class('sheet-layer')],
-    [
-      h.div([h.Class('sheet-scrim'), h.OnClick(Message.ClickedCloseGuide())]),
-      h.div(
-        [
-          h.Class('sheet glass-strong guide'),
-          h.Role('dialog'),
-          h.AriaModal(true),
-          h.AriaLabel('How to play'),
-        ],
-        [
-          h.div([h.Class('grabber')]),
-          h.button(
-            [
-              h.Class('close glass'),
-              h.AriaLabel('Close'),
-              h.OnClick(Message.ClickedCloseGuide()),
-            ],
-            ['✕'],
-          ),
-          h.keyed('div')(
-            `guide-${page}`,
-            [h.Class(`guide-panel tint-${guidePage.tint}`)],
-            [guidePage.scene(h)],
-          ),
-          h.keyed('p')(
-            `guide-text-${page}`,
-            [h.Class('guide-headline')],
-            [guidePage.headline],
-          ),
-          h.div(
-            [h.Class('dots')],
-            Array.makeBy(GUIDE_PAGE_COUNT, index =>
-              h.button([
-                h.Class(`dot ${index === page ? 'is-current' : ''}`),
-                h.AriaLabel(`Page ${index + 1}`),
-                h.OnClick(Message.ClickedGuidePage({ page: index })),
-              ]),
-            ),
-          ),
-          h.button(
-            [
-              h.Class(`pill ${isLastPage ? 'primary' : 'glass'}`),
-              h.OnClick(Message.ClickedGuideNext()),
-            ],
-            [
-              isLastPage
-                ? Screen.guards.Title(model.screen)
-                  ? "Let's play!"
-                  : 'Back to the game'
-                : 'Next',
-            ],
-          ),
-        ],
+  return [
+    h.div([h.Class('grabber')]),
+    h.div(
+      [h.Class('sheet-bar')],
+      [
+        h.h2([...render.title, h.Class('sheet-bar-title')], ['How to play']),
+        h.button(
+          [...render.closeButton, h.Class('close glass'), h.AriaLabel('Close')],
+          [xmarkIcon(h)],
+        ),
+      ],
+    ),
+    h.keyed('div')(
+      `guide-${page}`,
+      [h.Class(`guide-panel tint-${guidePage.tint}`)],
+      [guidePage.scene(h)],
+    ),
+    h.keyed('p')(
+      `guide-text-${page}`,
+      [h.Class('guide-headline')],
+      [guidePage.headline],
+    ),
+    h.div(
+      [h.Class('dots')],
+      Array.makeBy(GUIDE_PAGE_COUNT, index =>
+        h.button([
+          h.Class(`dot ${index === page ? 'is-current' : ''}`),
+          h.AriaLabel(`Page ${index + 1}`),
+          h.OnClick(Message.ClickedGuidePage({ page: index })),
+        ]),
       ),
-    ],
-  )
+    ),
+    h.button(
+      [
+        h.Class(`pill ${isLastPage ? 'primary' : 'glass'}`),
+        h.OnClick(Message.ClickedGuideNext()),
+      ],
+      [
+        isLastPage
+          ? Screen.guards.Title(model.screen)
+            ? "Let's play!"
+            : 'Back to the game'
+          : 'Next',
+      ],
+    ),
+  ]
 }
+
+const guideDialog = (model: Model, h: H): Html =>
+  h.submodel({
+    slotId: 'guide-dialog',
+    view: Dialog.view,
+    model: model.guideDialog,
+    toParentMessage: message => Message.GotGuideDialogMessage({ message }),
+    viewInputs: {
+      toView: render =>
+        h.dialog(
+          [...render.dialog, h.Class('sheet-dialog')],
+          render.isVisible
+            ? [
+                h.div([...render.backdrop, h.Class('sheet-scrim')]),
+                h.div(
+                  [
+                    ...render.panel,
+                    h.Class('sheet material guide'),
+                    h.OnMount(DragSheetToDismiss()),
+                  ],
+                  guideContent(model, render, h),
+                ),
+              ]
+            : [],
+        ),
+    },
+  })
 
 // TABLE
 
@@ -803,7 +837,7 @@ const tableHeader = (game: Game, h: H): Html =>
           h.AriaLabel('Leave table'),
           h.OnClick(Message.ClickedLeaveTable()),
         ],
-        ['✕'],
+        [xmarkIcon(h)],
       ),
       h.div(
         [h.Class('round-title')],
@@ -843,7 +877,6 @@ const tableView = (game: Game, h: H): Html =>
       tableCenterView(game, h),
       boardView(game, h),
       actionBar(game, h),
-      phaseSheet(game, h),
     ],
   )
 
@@ -861,7 +894,10 @@ export const view = (model: Model, h: H): Document => ({
     Table: ({ game }) => `Trash · Round ${game.round}`,
   }),
   body: h.div(
-    [h.Class('app'), h.Style({ '--accent': accentFor(model) })],
+    [
+      h.Class(`app ${model.guideDialog.isOpen ? 'is-presenting' : ''}`),
+      h.Style({ '--accent': accentFor(model) }),
+    ],
     [
       h.div(
         [h.Class('aurora'), h.AriaHidden(true)],
@@ -875,10 +911,11 @@ export const view = (model: Model, h: H): Document => ({
         Title: () => titleView(model, h),
         Table: ({ game }) => tableView(game, h),
       }),
-      Guide.match(model.guide, {
-        Closed: () => h.empty,
-        Open: ({ page }) => guideSheet(model, page, h),
+      Screen.match(model.screen, {
+        Title: () => h.empty,
+        Table: ({ game }) => phaseSheet(game, h),
       }),
+      guideDialog(model, h),
     ],
   ),
 })

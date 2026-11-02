@@ -1,6 +1,8 @@
 import { Schema } from 'effect'
 import { defineMessageUnion } from 'foldkit/message'
 
+import { Dialog } from '@foldkit/ui'
+
 import { Card } from './domain/card'
 
 export const Message = defineMessageUnion({
@@ -9,7 +11,8 @@ export const Message = defineMessageUnion({
   ClickedHowToPlay: {},
   ClickedGuideNext: {},
   ClickedGuidePage: { page: Schema.Number },
-  ClickedCloseGuide: {},
+  GotGuideDialogMessage: { message: Dialog.Message },
+  SwipedDownGuide: {},
   CompletedShuffleDeck: { sequence: Schema.Number, deck: Schema.Array(Card) },
   ClickedStock: {},
   ClickedDiscardPile: {},
