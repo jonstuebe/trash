@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers'
-import { Clock, Effect, Option, Schema } from 'effect'
+import { Clock, Duration, Effect, Option, Schema } from 'effect'
 import * as SecureRandom from 'effect/crypto/SecureRandom'
+import { modifyFields } from 'foldkit/struct'
 
 import type { Game } from '../src/domain/game'
 import {
@@ -14,6 +15,7 @@ import {
 } from '../src/domain/push'
 import {
   ClientMessageJson,
+  GameSummaryJson,
   Intent,
   type Refusal,
   RoomJson,
@@ -22,11 +24,16 @@ import {
   ServerMessageJson,
   type Shuffle,
   applyMove,
+  cleanPlayerName,
   isRoomCode,
+  lifetimeOf,
+  nameSeat,
   roomPath,
   seat,
   seatOfDevice,
+  summaryOf,
   viewOf,
+  withNames,
 } from '../src/domain/room'
 import { type Freshness, sendPush } from './webPush'
 
@@ -34,7 +41,10 @@ const ROOM_KEY = 'room'
 const CODE_KEY = 'code'
 const pushKey = (seatIndex: number) => `push:${seatIndex}`
 
-const ROOM_PATH = /^\/api\/rooms\/([A-Z0-9]+)\/(socket|push)$/
+const ROOM_PATH = /^\/api\/rooms\/([A-Z0-9]+)\/(socket|push|summary)$/
+
+// Sent to open sockets when a Room expires, just before it deletes itself.
+const EXPIRED_CLOSE_CODE = 4001
 
 const shuffle: Shuffle = cards =>
   Effect.runSync(
@@ -55,7 +65,10 @@ const freshness = (): Freshness =>
     }).pipe(Effect.provide(SecureRandom.layerWebCrypto)),
   )
 
+const nowMillis = (): number => Effect.runSync(Clock.currentTimeMillis)
+
 const encodeServerMessage = Schema.encodeSync(ServerMessageJson)
+const encodeSummary = Schema.encodeSync(GameSummaryJson)
 const decodeClientMessage = Schema.decodeUnknownOption(ClientMessageJson)
 const encodeRoom = Schema.encodeSync(RoomJson)
 const decodeRoom = Schema.decodeUnknownOption(RoomJson)
@@ -87,8 +100,46 @@ export class Room extends DurableObject<Env> {
     )
   }
 
-  private save(room: RoomState): void {
+  // Every save pushes the Room's expiry back (see lifetimeOf).
+  private async save(room: RoomState): Promise<void> {
     this.ctx.storage.kv.put(ROOM_KEY, encodeRoom(room))
+    await this.scheduleExpiry(room)
+  }
+
+  private async scheduleExpiry(room: RoomState): Promise<void> {
+    await this.ctx.storage.setAlarm(
+      nowMillis() + Duration.toMillis(lifetimeOf(room)),
+    )
+  }
+
+  // Nobody has touched the game for its whole lifetime. deleteAll also
+  // clears the alarm (compatibility date 2026-02-24 and later), and an empty
+  // Durable Object stops existing once it shuts down.
+  // A player looking at the game is told it's gone, the same way as a link
+  // to a game that never existed.
+  override async alarm(): Promise<void> {
+    const gone = encodeServerMessage(
+      ServerMessage.Refused({ reason: 'Missing' }),
+    )
+    this.ctx.getWebSockets().forEach(socket => {
+      try {
+        socket.send(gone)
+        socket.close(EXPIRED_CLOSE_CODE, 'Expired')
+      } catch {
+        // Already closed.
+      }
+    })
+    await this.ctx.storage.deleteAll()
+  }
+
+  private summary(url: URL): Response {
+    const deviceId = url.searchParams.get('device') ?? ''
+    return new Response(encodeSummary(summaryOf(this.load(), deviceId)), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      },
+    })
   }
 
   private sendTo(socket: WebSocket, room: RoomState): void {
@@ -152,8 +203,15 @@ export class Room extends DurableObject<Env> {
       }
     }
 
+    const room = this.load()
+    const named = (game: Game) =>
+      Option.match(room, {
+        onNone: () => game,
+        onSome: current => withNames(current, game),
+      })
+
     await Promise.all(
-      alertsFor(maybeBefore, after)
+      alertsFor(Option.map(maybeBefore, named), named(after))
         .filter(({ seat: seatIndex }) => !connectedSeats.includes(seatIndex))
         .map(send),
     )
@@ -189,10 +247,12 @@ export class Room extends DurableObject<Env> {
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const [, code = '', route] = ROOM_PATH.exec(url.pathname) ?? []
-    this.ctx.storage.kv.put(CODE_KEY, code)
 
     if (route === 'push') {
       return this.register(request)
+    }
+    if (route === 'summary') {
+      return this.summary(url)
     }
 
     const deviceId = url.searchParams.get('device') ?? ''
@@ -212,8 +272,21 @@ export class Room extends DurableObject<Env> {
       return new Response('Bad request', { status: 400 })
     }
 
-    const { room, seat: seatIndex } = seating.value
-    this.save(room)
+    // NOTE: nothing is written until the device has a seat, so a link to a
+    // game that doesn't exist leaves no storage behind.
+    const maybeName = cleanPlayerName(url.searchParams.get('name') ?? '')
+    const seatIndex = seating.value.seat
+    const room = nameSeat(seating.value.room, seatIndex, maybeName)
+    this.ctx.storage.kv.put(CODE_KEY, code)
+    const isChanged =
+      Option.isNone(maybeRoom) ||
+      encodeRoom(room) !== encodeRoom(maybeRoom.value)
+    if (isChanged) {
+      await this.save(room)
+    } else if ((await this.ctx.storage.getAlarm()) === null) {
+      // A Room from before expiry existed gets its first deadline.
+      await this.scheduleExpiry(room)
+    }
 
     const { 0: client, 1: server } = new WebSocketPair()
     this.ctx.acceptWebSocket(server)
@@ -265,12 +338,10 @@ export class Room extends DurableObject<Env> {
       return
     }
 
-    const nextRoom: RoomState = {
-      hostId: room.hostId,
-      maybeGuestId: room.maybeGuestId,
-      maybeGame: Option.some(nextGame),
-    }
-    this.save(nextRoom)
+    const nextRoom = modifyFields(room, {
+      maybeGame: () => Option.some(nextGame),
+    })
+    await this.save(nextRoom)
     this.broadcast(nextRoom)
     await this.alert(Option.some(game), nextGame)
   }
@@ -300,6 +371,9 @@ export default {
       return new Response('Not found', { status: 404 })
     }
     if (route === 'push' && request.method !== 'POST') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+    if (route === 'summary' && request.method !== 'GET') {
       return new Response('Method not allowed', { status: 405 })
     }
     if (route === 'socket' && request.headers.get('Upgrade') !== 'websocket') {

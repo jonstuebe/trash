@@ -8,26 +8,36 @@ import { Dialog } from '@foldkit/ui'
 import { buildDeck } from './domain/card'
 import { type Game, Phase, deal, newBotGame } from './domain/game'
 import { newFriendGame } from './domain/game'
-import { Move, RoomView, ServerMessage, settle } from './domain/room'
+import {
+  GameSummary,
+  Move,
+  RoomView,
+  ServerMessage,
+  settle,
+} from './domain/room'
 import {
   ApplyAppUpdate,
-  ForgetFriendGame,
+  FetchGameSummary,
   GenerateRoomCode,
   Message,
   type Model,
   RegisterTurnAlerts,
-  SaveFriendGame,
+  SaveFriendGames,
+  SavePlayerName,
   SendMove,
   ShowUrl,
   ShuffleDeck,
   WaitBeforeBotStep,
+  init,
   update,
 } from './main'
 import {
+  AfterNaming,
   AppUpdate,
   Connection,
   FriendRoom,
   GUIDE_DIALOG_ID,
+  GameStatus,
   Invite,
   Screen,
   TurnAlerts,
@@ -38,7 +48,8 @@ const DEVICE_ID = 'device-0000-0000-0000'
 const atTable = (game: Game): Model => ({
   screen: Screen.Table({ game }),
   deviceId: DEVICE_ID,
-  maybeSavedFriendGame: Option.none(),
+  maybePlayerName: Option.some('Sam'),
+  friendGames: [],
   guidePage: 0,
   guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
   appUpdate: AppUpdate.None(),
@@ -52,6 +63,9 @@ const gameOf = (model: Model): Game =>
       throw new Error('expected the table')
     },
     StartingFriendGame: () => {
+      throw new Error('expected the table')
+    },
+    Naming: () => {
       throw new Error('expected the table')
     },
     Friend: () => {
@@ -69,7 +83,8 @@ describe('update', () => {
       given<Model>({
         screen: Screen.Title(),
         deviceId: DEVICE_ID,
-        maybeSavedFriendGame: Option.none(),
+        maybePlayerName: Option.some('Sam'),
+        friendGames: [],
         guidePage: 0,
         guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
         appUpdate: AppUpdate.None(),
@@ -151,7 +166,8 @@ describe('update', () => {
       given<Model>({
         screen: Screen.Title(),
         deviceId: DEVICE_ID,
-        maybeSavedFriendGame: Option.none(),
+        maybePlayerName: Option.some('Sam'),
+        friendGames: [],
         guidePage: 2,
         // The enter and leave transitions are the Dialog's business; this
         // story is about the guide's paging.
@@ -209,7 +225,8 @@ describe('update', () => {
     const atTitle = (): Model => ({
       screen: Screen.Title(),
       deviceId: DEVICE_ID,
-      maybeSavedFriendGame: Option.none(),
+      maybePlayerName: Option.some('Sam'),
+      friendGames: [],
       guidePage: 0,
       guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
       appUpdate: AppUpdate.None(),
@@ -235,18 +252,25 @@ describe('update', () => {
           GenerateRoomCode,
           Message.CompletedGenerateRoomCode({ code: 'K7QXMP' }),
         ),
-        Command.expectHas(SaveFriendGame, ShowUrl),
+        Command.expectHas(
+          SaveFriendGames({ games: [{ code: 'K7QXMP', intent: 'Host' }] }),
+          ShowUrl,
+        ),
         model(next => {
           const screen = friendScreenOf(next)
           expect(screen.code).toBe('K7QXMP')
           expect(screen.intent).toBe('Host')
           expect(Connection.guards.Connecting(screen.connection)).toBe(true)
-          expect(next.maybeSavedFriendGame).toEqual(
-            Option.some({ code: 'K7QXMP', intent: 'Host' }),
-          )
+          expect(next.friendGames).toEqual([
+            {
+              code: 'K7QXMP',
+              intent: 'Host',
+              status: GameStatus.Unknown(),
+            },
+          ])
         }),
         Command.resolveAll(
-          [SaveFriendGame, Message.CompletedSaveFriendGame()],
+          [SaveFriendGames, Message.CompletedSaveFriendGames()],
           [ShowUrl, Message.CompletedShowUrl()],
         ),
         message(Message.ConnectedRoomSocket()),
@@ -314,26 +338,31 @@ describe('update', () => {
     test('a full room is forgotten', () => {
       story(
         update,
-        given({
-          ...seatedAt(1),
-          maybeSavedFriendGame: Option.some({
-            code: 'K7QXMP',
-            intent: 'Join' as const,
+        given(
+          modifyFields(seatedAt(1), {
+            friendGames: () => [
+              { code: 'K7QXMP', intent: 'Join', status: GameStatus.Unknown() },
+              { code: 'ABCDEF', intent: 'Host', status: GameStatus.Unknown() },
+            ],
           }),
-        }),
+        ),
         message(
           Message.ReceivedServerMessage({
             message: ServerMessage.Refused({ reason: 'Full' }),
           }),
         ),
-        Command.expectHas(ForgetFriendGame),
+        Command.expectExact(
+          SaveFriendGames({ games: [{ code: 'ABCDEF', intent: 'Host' }] }),
+        ),
         model(next => {
-          expect(next.maybeSavedFriendGame).toEqual(Option.none())
+          expect(Array.map(next.friendGames, row => row.code)).toEqual([
+            'ABCDEF',
+          ])
           expect(friendScreenOf(next).room).toEqual(
             FriendRoom.Refused({ reason: 'Full' }),
           )
         }),
-        Command.resolve(ForgetFriendGame, Message.CompletedForgetFriendGame()),
+        Command.resolve(SaveFriendGames, Message.CompletedSaveFriendGames()),
       )
     })
 
@@ -430,6 +459,302 @@ describe('update', () => {
         model(next => {
           expect(TurnAlerts.guards.Failed(next.turnAlerts)).toBe(true)
         }),
+      )
+    })
+  })
+
+  describe('game list', () => {
+    const menu = (overrides: Partial<Model> = {}): Model => ({
+      screen: Screen.Title(),
+      deviceId: DEVICE_ID,
+      maybePlayerName: Option.some('Sam'),
+      friendGames: [
+        { code: 'AAAAAA', intent: 'Host', status: GameStatus.Unknown() },
+        { code: 'BBBBBB', intent: 'Join', status: GameStatus.Unknown() },
+      ],
+      guidePage: 0,
+      guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
+      appUpdate: AppUpdate.None(),
+      turnAlerts: TurnAlerts.Off(),
+      ...overrides,
+    })
+
+    const flagsWith = (
+      overrides: Partial<Parameters<typeof init>[0]> = {},
+    ): Parameters<typeof init>[0] => ({
+      deviceId: DEVICE_ID,
+      maybePlayerName: Option.some('Sam'),
+      savedFriendGames: [
+        { code: 'AAAAAA', intent: 'Host' },
+        { code: 'BBBBBB', intent: 'Join' },
+      ],
+      maybeInviteCode: Option.none(),
+      turnAlerts: TurnAlerts.Off(),
+      ...overrides,
+    })
+
+    test('the menu asks every saved game whose turn it is', () => {
+      const init_ = init(flagsWith())
+      expect(init_.model.friendGames).toHaveLength(2)
+      expect(
+        Array.map(init_.commands ?? [], command => [
+          command.name,
+          command.args,
+        ]),
+      ).toEqual([
+        ['FetchGameSummary', { code: 'AAAAAA', deviceId: DEVICE_ID }],
+        ['FetchGameSummary', { code: 'BBBBBB', deviceId: DEVICE_ID }],
+      ])
+    })
+
+    test('an invite link without a name asks for one before joining', () => {
+      const init_ = init(
+        flagsWith({
+          maybePlayerName: Option.none(),
+          savedFriendGames: [],
+          maybeInviteCode: Option.some('K7QXMP'),
+        }),
+      )
+      expect(init_.model.screen).toEqual(
+        Screen.Naming({
+          draft: '',
+          next: AfterNaming.OpenGame({ code: 'K7QXMP', intent: 'Join' }),
+        }),
+      )
+      expect(init_.commands).toBeUndefined()
+
+      story(
+        update,
+        given(init_.model),
+        message(Message.UpdatedNameDraft({ value: '  Alex  ' })),
+        message(Message.SubmittedName()),
+        Command.expectHas(
+          SavePlayerName({ name: 'Alex' }),
+          SaveFriendGames({ games: [{ code: 'K7QXMP', intent: 'Join' }] }),
+          ShowUrl,
+        ),
+        model(next => {
+          expect(next.maybePlayerName).toEqual(Option.some('Alex'))
+          expect(Screen.guards.Friend(next.screen)).toBe(true)
+        }),
+        Command.resolveAll(
+          [SavePlayerName, Message.CompletedSavePlayerName()],
+          [SaveFriendGames, Message.CompletedSaveFriendGames()],
+          [ShowUrl, Message.CompletedShowUrl()],
+        ),
+      )
+    })
+
+    test('playing a friend asks for a name once, then starts the game', () => {
+      story(
+        update,
+        given(menu({ maybePlayerName: Option.none() })),
+        message(Message.ClickedPlayFriend()),
+        Command.expectNone(),
+        model(next => {
+          expect(next.screen).toEqual(
+            Screen.Naming({ draft: '', next: AfterNaming.StartGame() }),
+          )
+        }),
+        message(Message.UpdatedNameDraft({ value: '   ' })),
+        message(Message.SubmittedName()),
+        Command.expectNone(),
+        message(Message.UpdatedNameDraft({ value: 'Sam' })),
+        message(Message.SubmittedName()),
+        Command.expectExact(
+          SavePlayerName({ name: 'Sam' }),
+          GenerateRoomCode(),
+        ),
+        model(next => {
+          expect(Screen.guards.StartingFriendGame(next.screen)).toBe(true)
+        }),
+        Command.resolveAll(
+          [SavePlayerName, Message.CompletedSavePlayerName()],
+          [
+            GenerateRoomCode,
+            Message.CompletedGenerateRoomCode({ code: 'K7QXMP' }),
+          ],
+        ),
+        model(next => {
+          expect(Array.map(next.friendGames, row => row.code)).toEqual([
+            'K7QXMP',
+            'AAAAAA',
+            'BBBBBB',
+          ])
+        }),
+        Command.resolveAll(
+          [SaveFriendGames, Message.CompletedSaveFriendGames()],
+          [ShowUrl, Message.CompletedShowUrl()],
+        ),
+      )
+    })
+
+    test('a known name goes straight to the game', () => {
+      story(
+        update,
+        given(menu()),
+        message(Message.ClickedPlayFriend()),
+        Command.expectExact(GenerateRoomCode()),
+        Command.resolve(
+          GenerateRoomCode,
+          Message.CompletedGenerateRoomCode({ code: 'K7QXMP' }),
+        ),
+        Command.resolveAll(
+          [SaveFriendGames, Message.CompletedSaveFriendGames()],
+          [ShowUrl, Message.CompletedShowUrl()],
+        ),
+      )
+    })
+
+    test('each row shows what its Room reports', () => {
+      const summary = GameSummary.YourTurn({ opponentName: 'Alex', round: 3 })
+      story(
+        update,
+        given(menu()),
+        message(
+          Message.CompletedFetchGameSummary({
+            code: 'BBBBBB',
+            maybeSummary: Option.some(summary),
+          }),
+        ),
+        Command.expectNone(),
+        message(
+          Message.CompletedFetchGameSummary({
+            code: 'AAAAAA',
+            maybeSummary: Option.none(),
+          }),
+        ),
+        Command.expectNone(),
+        model(next => {
+          expect(Array.map(next.friendGames, row => row.status)).toEqual([
+            GameStatus.Unknown(),
+            GameStatus.Known({ summary }),
+          ])
+        }),
+      )
+    })
+
+    test('a game whose Room has expired drops off the list', () => {
+      story(
+        update,
+        given(menu()),
+        message(
+          Message.CompletedFetchGameSummary({
+            code: 'AAAAAA',
+            maybeSummary: Option.some(GameSummary.Missing()),
+          }),
+        ),
+        Command.expectExact(
+          SaveFriendGames({ games: [{ code: 'BBBBBB', intent: 'Join' }] }),
+        ),
+        model(next => {
+          expect(Array.map(next.friendGames, row => row.code)).toEqual([
+            'BBBBBB',
+          ])
+        }),
+        Command.resolve(SaveFriendGames, Message.CompletedSaveFriendGames()),
+      )
+    })
+
+    test('removing a game forgets it on this device only', () => {
+      story(
+        update,
+        given(menu()),
+        message(Message.ClickedRemoveFriendGame({ code: 'BBBBBB' })),
+        Command.expectExact(
+          SaveFriendGames({ games: [{ code: 'AAAAAA', intent: 'Host' }] }),
+        ),
+        Command.resolve(SaveFriendGames, Message.CompletedSaveFriendGames()),
+      )
+    })
+
+    test('opening a game moves it to the top of the list', () => {
+      story(
+        update,
+        given(menu()),
+        message(Message.ClickedResumeFriendGame({ code: 'BBBBBB' })),
+        Command.expectHas(
+          SaveFriendGames({
+            games: [
+              { code: 'BBBBBB', intent: 'Join' },
+              { code: 'AAAAAA', intent: 'Host' },
+            ],
+          }),
+          ShowUrl({ path: '/r/BBBBBB' }),
+        ),
+        model(next => {
+          const screen = next.screen
+          expect(Screen.guards.Friend(screen) && screen.intent).toBe('Join')
+        }),
+        Command.resolveAll(
+          [SaveFriendGames, Message.CompletedSaveFriendGames()],
+          [ShowUrl, Message.CompletedShowUrl()],
+        ),
+        message(Message.ClickedLeaveTable()),
+        Command.expectExact(
+          ShowUrl({ path: '/' }),
+          FetchGameSummary({ code: 'BBBBBB', deviceId: DEVICE_ID }),
+          FetchGameSummary({ code: 'AAAAAA', deviceId: DEVICE_ID }),
+        ),
+        model(next => {
+          expect(Screen.guards.Title(next.screen)).toBe(true)
+          expect(next.friendGames).toHaveLength(2)
+        }),
+        Command.resolveAll(
+          [ShowUrl, Message.CompletedShowUrl()],
+          [
+            FetchGameSummary,
+            Message.CompletedFetchGameSummary({
+              code: 'BBBBBB',
+              maybeSummary: Option.none(),
+            }),
+          ],
+          [
+            FetchGameSummary,
+            Message.CompletedFetchGameSummary({
+              code: 'AAAAAA',
+              maybeSummary: Option.none(),
+            }),
+          ],
+        ),
+      )
+    })
+
+    test('the player can change their name from the menu', () => {
+      story(
+        update,
+        given(menu()),
+        message(Message.ClickedChangeName()),
+        model(next => {
+          expect(next.screen).toEqual(
+            Screen.Naming({ draft: 'Sam', next: AfterNaming.BackToMenu() }),
+          )
+        }),
+        message(Message.UpdatedNameDraft({ value: 'Samantha' })),
+        message(Message.SubmittedName()),
+        Command.expectHas(SavePlayerName({ name: 'Samantha' }), ShowUrl),
+        model(next => {
+          expect(next.maybePlayerName).toEqual(Option.some('Samantha'))
+          expect(Screen.guards.Title(next.screen)).toBe(true)
+        }),
+        Command.resolveAll(
+          [SavePlayerName, Message.CompletedSavePlayerName()],
+          [ShowUrl, Message.CompletedShowUrl()],
+          [
+            FetchGameSummary,
+            Message.CompletedFetchGameSummary({
+              code: 'AAAAAA',
+              maybeSummary: Option.none(),
+            }),
+          ],
+          [
+            FetchGameSummary,
+            Message.CompletedFetchGameSummary({
+              code: 'BBBBBB',
+              maybeSummary: Option.none(),
+            }),
+          ],
+        ),
       )
     })
   })

@@ -1,4 +1,4 @@
-import { Array, Match, Option, Result, pipe } from 'effect'
+import { Array, Match, Option, Order, Result, pipe } from 'effect'
 import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 
 import { Dialog } from '@foldkit/ui'
@@ -25,13 +25,21 @@ import {
   revealedCount,
   topDiscard,
 } from './domain/game'
-import type { Refusal } from './domain/room'
+import {
+  GameSummary,
+  PLAYER_NAME_MAX_LENGTH,
+  type Refusal,
+  cleanPlayerName,
+} from './domain/room'
 import { Message } from './message'
 import {
+  AfterNaming,
   AppUpdate,
   Connection,
+  type FriendGameRow,
   FriendRoom,
   GUIDE_PAGE_COUNT,
+  GameStatus,
   Invite,
   type Model,
   Screen,
@@ -202,34 +210,177 @@ const fanCard = (card: Card, index: number, h: H): Html =>
     [cardFace(card, h)],
   )
 
+// The game list, the ones waiting on this player first.
+const rowPriority = (row: FriendGameRow): number =>
+  GameStatus.match(row.status, {
+    Unknown: () => 2,
+    Known: ({ summary }) =>
+      GameSummary.match(summary, {
+        YourTurn: () => 0,
+        BetweenRounds: () => 1,
+        TheirTurn: () => 3,
+        WaitingForGuest: () => 4,
+        Over: () => 5,
+        Missing: () => 6,
+        NotSeated: () => 6,
+      }),
+  })
+
+const sortedRows = (
+  rows: ReadonlyArray<FriendGameRow>,
+): ReadonlyArray<FriendGameRow> =>
+  Array.sortWith(rows, rowPriority, Order.Number)
+
+type RowText = Readonly<{ title: string; detail: string; isUrgent: boolean }>
+
+const rowText = (row: FriendGameRow): RowText =>
+  GameStatus.match(row.status, {
+    Unknown: () => ({
+      title: `Game ${row.code}`,
+      detail: 'Tap to open',
+      isUrgent: false,
+    }),
+    Known: ({ summary }) =>
+      GameSummary.match(summary, {
+        WaitingForGuest: () => ({
+          title: 'Invite sent',
+          detail: `Code ${row.code} · Not joined yet`,
+          isUrgent: false,
+        }),
+        YourTurn: ({ opponentName, round }) => ({
+          title: opponentName,
+          detail: `Your turn · Round ${round}`,
+          isUrgent: true,
+        }),
+        TheirTurn: ({ opponentName, round }) => ({
+          title: opponentName,
+          detail: `Their turn · Round ${round}`,
+          isUrgent: false,
+        }),
+        BetweenRounds: ({ opponentName, round }) => ({
+          title: opponentName,
+          detail: `Round ${round} is over · Deal the next one`,
+          isUrgent: true,
+        }),
+        Over: ({ opponentName, didWin }) => ({
+          title: opponentName,
+          detail: didWin ? 'You won · Play again?' : `${opponentName} won`,
+          isUrgent: false,
+        }),
+        Missing: () => ({
+          title: `Game ${row.code}`,
+          detail: 'This game has ended',
+          isUrgent: false,
+        }),
+        NotSeated: () => ({
+          title: `Game ${row.code}`,
+          detail: 'This game is full',
+          isUrgent: false,
+        }),
+      }),
+  })
+
+const chevronIcon = (h: H): Html =>
+  h.svg(
+    [h.Class('icon chevron'), h.ViewBox('0 0 24 24'), h.AriaHidden(true)],
+    [
+      h.path([
+        h.D('m9 5 7 7-7 7'),
+        h.Fill('none'),
+        h.Stroke('currentColor'),
+        h.StrokeWidth('2'),
+        h.StrokeLinecap('round'),
+        h.StrokeLinejoin('round'),
+      ]),
+    ],
+  )
+
+const gameRowView = (row: FriendGameRow, h: H): Html => {
+  const text = rowText(row)
+  return h.keyed('li')(
+    row.code,
+    [h.Class(`game-row glass ${text.isUrgent ? 'is-urgent' : ''}`)],
+    [
+      h.button(
+        [
+          h.Class('game-row-open'),
+          h.AriaLabel(`${text.title}, ${text.detail}`),
+          h.OnClick(Message.ClickedResumeFriendGame({ code: row.code })),
+        ],
+        [
+          h.span([h.Class('game-row-dot'), h.AriaHidden(true)]),
+          h.span(
+            [h.Class('game-row-text')],
+            [
+              h.strong([h.Class('game-row-title')], [text.title]),
+              h.span([h.Class('game-row-detail')], [text.detail]),
+            ],
+          ),
+          chevronIcon(h),
+        ],
+      ),
+      h.button(
+        [
+          h.Class('game-row-remove'),
+          h.AriaLabel(`Remove ${text.title} from your games`),
+          h.OnClick(Message.ClickedRemoveFriendGame({ code: row.code })),
+        ],
+        [xmarkIcon(h)],
+      ),
+    ],
+  )
+}
+
+const gameListView = (model: Model, h: H): Html =>
+  Array.match(model.friendGames, {
+    onEmpty: () => h.empty,
+    onNonEmpty: rows =>
+      h.section(
+        [h.Class('game-list'), h.AriaLabelledBy('game-list-heading')],
+        [
+          h.header(
+            [h.Class('game-list-header')],
+            [
+              h.h2([h.Id('game-list-heading')], ['Your games']),
+              Option.match(model.maybePlayerName, {
+                onNone: () => h.empty,
+                onSome: name =>
+                  h.button(
+                    [
+                      h.Class('game-list-name'),
+                      h.AriaLabel(`Playing as ${name}. Change your name`),
+                      h.OnClick(Message.ClickedChangeName()),
+                    ],
+                    [`Playing as ${name}`],
+                  ),
+              }),
+            ],
+          ),
+          h.ul(
+            [h.Class('game-rows')],
+            Array.map(sortedRows(rows), row => gameRowView(row, h)),
+          ),
+        ],
+      ),
+  })
+
 const titleView = (model: Model, h: H): Html =>
   h.main(
-    [h.Class('title-screen')],
+    [
+      h.Class(
+        `title-screen ${Array.isReadonlyArrayNonEmpty(model.friendGames) ? 'has-games' : ''}`,
+      ),
+    ],
     [
       titleFan(h),
       h.h1([h.Class('wordmark')], ['Trash']),
       h.p([h.Class('tagline')], ['Flip Ace through Ten before anyone else.']),
+      gameListView(model, h),
       h.div(
         [h.Class('title-actions')],
         [
-          Option.match(model.maybeSavedFriendGame, {
-            onNone: () => h.empty,
-            onSome: () =>
-              h.button(
-                [
-                  h.Class('pill primary'),
-                  h.OnClick(Message.ClickedResumeFriendGame()),
-                ],
-                ['Back to your friend game'],
-              ),
-          }),
           h.button(
-            [
-              h.Class(
-                `pill ${Option.isSome(model.maybeSavedFriendGame) ? 'glass' : 'primary'}`,
-              ),
-              h.OnClick(Message.ClickedPlayFriend()),
-            ],
+            [h.Class('pill primary'), h.OnClick(Message.ClickedPlayFriend())],
             ['Play a friend'],
           ),
           h.button(
@@ -1141,15 +1292,105 @@ const connectingView = (connection: Connection, h: H): Html =>
 
 const refusedView = (reason: Refusal, h: H): Html =>
   friendNotice(
-    reason === 'Full' ? 'This game is full' : "This game doesn't exist",
+    reason === 'Full' ? 'This game is full' : 'This game is gone',
     reason === 'Full'
       ? 'Two people are already playing it. Ask your friend for a new link.'
-      : 'The link may be mistyped. Ask your friend for a new one.',
+      : 'Games are cleared after a while with no moves, or the link may be mistyped. Start a new one from the menu.',
     [backToMenuButton(h)],
     h,
   )
 
 type FriendScreen = typeof Screen.Friend.Type
+
+type NamingScreen = typeof Screen.Naming.Type
+
+type NamingText = Readonly<{
+  heading: string
+  body: string
+  submit: string
+}>
+
+const namingText = (next: AfterNaming): NamingText =>
+  AfterNaming.match(next, {
+    StartGame: () => ({
+      heading: "What's your name?",
+      body: "Your friend sees it while you play. You'll only be asked once.",
+      submit: 'Continue',
+    }),
+    OpenGame: ({ intent }) =>
+      intent === 'Join'
+        ? {
+            heading: "You're invited",
+            body: 'Add your name so your friend knows who joined.',
+            submit: 'Join game',
+          }
+        : {
+            heading: "What's your name?",
+            body: 'Your friend sees it while you play.',
+            submit: 'Continue',
+          },
+    BackToMenu: () => ({
+      heading: 'Your name',
+      body: 'Your friends see it in every game you play.',
+      submit: 'Save',
+    }),
+  })
+
+const NAME_INPUT_ID = 'player-name'
+
+const namingView = (screen: NamingScreen, h: H): Html => {
+  const text = namingText(screen.next)
+  const isReady = Option.isSome(cleanPlayerName(screen.draft))
+  return h.main(
+    [h.Class('title-screen is-naming')],
+    [
+      titleFan(h),
+      h.h1([h.Class('lobby-heading')], [text.heading]),
+      h.p([h.Class('tagline')], [text.body]),
+      h.form(
+        [h.Class('naming-form'), h.OnSubmit(Message.SubmittedName())],
+        [
+          h.label([h.Class('sr-only'), h.For(NAME_INPUT_ID)], ['Your name']),
+          h.input([
+            h.Id(NAME_INPUT_ID),
+            h.Class('name-input glass'),
+            h.Type('text'),
+            h.Value(screen.draft),
+            h.Placeholder('Your name'),
+            h.Maxlength(PLAYER_NAME_MAX_LENGTH),
+            h.Autocomplete('nickname'),
+            h.Autocapitalize('words'),
+            h.Spellcheck(false),
+            h.EnterKeyHint('done'),
+            h.Autofocus(true),
+            h.OnInput(value => Message.UpdatedNameDraft({ value })),
+          ]),
+          h.div(
+            [h.Class('title-actions')],
+            [
+              h.button(
+                [
+                  h.Class('pill primary'),
+                  h.Type('submit'),
+                  h.Disabled(!isReady),
+                ],
+                [text.submit],
+              ),
+              h.button(
+                [
+                  h.Class('pill glass'),
+                  h.Type('button'),
+                  h.OnClick(Message.ClickedCancelNaming()),
+                ],
+                ['Cancel'],
+              ),
+            ],
+          ),
+        ],
+      ),
+    ],
+  )
+}
 
 const friendTable = (
   screen: FriendScreen,
@@ -1183,6 +1424,7 @@ const botTable = (game: Game): Table => ({
 const screenTable = (model: Model): Option.Option<Table> =>
   Screen.match(model.screen, {
     Title: () => Option.none(),
+    Naming: () => Option.none(),
     StartingFriendGame: () => Option.none(),
     Table: ({ game }) => Option.some(botTable(game)),
     Friend: friend =>
@@ -1276,6 +1518,7 @@ export const view = (model: Model, h: H): Document => ({
       ),
       Screen.match(model.screen, {
         Title: () => titleView(model, h),
+        Naming: screen => namingView(screen, h),
         StartingFriendGame: () =>
           friendNotice('Setting up…', 'Making your game.', [], h),
         Table: ({ game }) => tableView(botTable(game), h),
