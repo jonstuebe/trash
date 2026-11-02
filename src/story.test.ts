@@ -17,6 +17,7 @@ import {
 } from './domain/room'
 import {
   ApplyAppUpdate,
+  CancelInvite,
   FetchGameSummary,
   GenerateRoomCode,
   Message,
@@ -333,6 +334,85 @@ describe('update', () => {
           expect(FriendRoom.guards.WaitingForGuest(screen.room)).toBe(true)
           expect(Connection.guards.Connected(screen.connection)).toBe(true)
         }),
+      )
+    })
+
+    const inLobby = (): Model => ({
+      ...atTitle(),
+      friendGames: [
+        { code: 'K7QXMP', intent: 'Host', status: GameStatus.Unknown() },
+      ],
+      screen: Screen.Friend({
+        code: 'K7QXMP',
+        intent: 'Host',
+        seat: 0,
+        room: FriendRoom.WaitingForGuest(),
+        connection: Connection.Connected(),
+        invite: Invite.Idle(),
+      }),
+    })
+
+    test('cancelling an invite forgets the game and deletes its Room', () => {
+      story(
+        update,
+        given(inLobby()),
+        message(Message.ClickedCancelInvite()),
+        Command.expectExact(
+          SaveFriendGames({ games: [] }),
+          ShowUrl({ path: '/' }),
+          CancelInvite({ code: 'K7QXMP', deviceId: DEVICE_ID }),
+        ),
+        model(next => {
+          expect(Screen.guards.Title(next.screen)).toBe(true)
+          expect(next.friendGames).toEqual([])
+        }),
+        Command.resolveAll(
+          [SaveFriendGames, Message.CompletedSaveFriendGames()],
+          [ShowUrl, Message.CompletedShowUrl()],
+          [
+            CancelInvite,
+            Message.CompletedCancelInvite({
+              code: 'K7QXMP',
+              outcome: 'Cancelled',
+            }),
+          ],
+        ),
+        model(next => {
+          expect(next.friendGames).toEqual([])
+        }),
+      )
+    })
+
+    test('a friend who joined before the cancel keeps the game', () => {
+      story(
+        update,
+        given(inLobby()),
+        message(Message.ClickedCancelInvite()),
+        Command.resolveAll(
+          [SaveFriendGames, Message.CompletedSaveFriendGames()],
+          [ShowUrl, Message.CompletedShowUrl()],
+          [
+            CancelInvite,
+            Message.CompletedCancelInvite({
+              code: 'K7QXMP',
+              outcome: 'Joined',
+            }),
+          ],
+        ),
+        Command.expectExact(
+          SaveFriendGames({ games: [{ code: 'K7QXMP', intent: 'Host' }] }),
+          FetchGameSummary({ code: 'K7QXMP', deviceId: DEVICE_ID }),
+        ),
+        Command.resolveAll(
+          [SaveFriendGames, Message.CompletedSaveFriendGames()],
+          [
+            FetchGameSummary,
+            Message.CompletedFetchGameSummary({
+              code: 'K7QXMP',
+              maybeSummary: Option.none(),
+            }),
+          ],
+        ),
       )
     })
 

@@ -350,6 +350,26 @@ export const summaryOf = (
       }),
   })
 
+// CANCELLING
+
+// Only the host can call off an invite, and only before anyone has joined.
+// A Room that's already gone has nothing left to cancel.
+export type Cancellation = 'Delete' | 'Gone' | 'Joined' | 'NotHost'
+
+export const cancellationOf = (
+  maybeRoom: Option.Option<Room>,
+  deviceId: string,
+): Cancellation =>
+  Option.match(maybeRoom, {
+    onNone: () => 'Gone',
+    onSome: room => {
+      if (room.hostId !== deviceId) {
+        return 'NotHost'
+      }
+      return Option.isSome(room.maybeGuestId) ? 'Joined' : 'Delete'
+    },
+  })
+
 // EXPIRY
 
 // A Room deletes itself once nobody has touched it for a while. Every change

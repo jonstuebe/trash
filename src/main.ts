@@ -319,6 +319,28 @@ export const SendMove = Command.define('SendMove', {
     ),
 })
 
+// Deletes an invite nobody has joined, so the link stops working. The Room
+// refuses once the guest is in (409), and the game comes back on the list.
+export const CancelInvite = Command.define('CancelInvite', {
+  args: { code: Schema.String, deviceId: Schema.String },
+  messages: [Message.CompletedCancelInvite],
+  execute: ({ code, deviceId }) =>
+    Effect.gen(function* () {
+      const url = new URL(`/api/rooms/${code}/invite`, window.location.href)
+      url.searchParams.set('device', deviceId)
+      const response = yield* Effect.tryPromise(() =>
+        fetch(url, { method: 'DELETE' }),
+      )
+      if (response.status === 409) {
+        return 'Joined' as const
+      }
+      return response.ok ? ('Cancelled' as const) : ('Failed' as const)
+    }).pipe(
+      Effect.catch(() => Effect.succeed('Failed' as const)),
+      Effect.map(outcome => Message.CompletedCancelInvite({ code, outcome })),
+    ),
+})
+
 // The code is in the text as well as the link: a friend with Trash on their
 // Home Screen types it in there, since the link opens in the browser.
 const inviteText = (code: string): string =>
@@ -514,6 +536,35 @@ const goToMenu = (model: Model): UpdateReturn => {
   return {
     model: nextModel,
     commands: [ShowUrl({ path: '/' }), ...fetchSummaries(nextModel)],
+  }
+}
+
+// Leaves the lobby and forgets the game here, while the Room deletes itself.
+const cancelInvite = (model: Model, screen: FriendScreen): UpdateReturn => {
+  const forgotten = forgetFriendGame(model, screen.code)
+  const menu = goToMenu(forgotten.model)
+  return {
+    model: menu.model,
+    commands: [
+      ...(forgotten.commands ?? []),
+      ...(menu.commands ?? []),
+      CancelInvite({ code: screen.code, deviceId: model.deviceId }),
+    ],
+  }
+}
+
+// The friend joined before the cancel reached the Room, so the game is real
+// and goes back on the list.
+const restoreJoinedGame = (model: Model, code: string): UpdateReturn => {
+  const friendGames = withGameFirst(model.friendGames, code, 'Host')
+  return {
+    model: modifyFields(model, { friendGames: () => friendGames }),
+    commands: [
+      SaveFriendGames({ games: savedOf(friendGames) }),
+      ...(Screen.guards.Title(model.screen)
+        ? [FetchGameSummary({ code, deviceId: model.deviceId })]
+        : []),
+    ],
   }
 }
 
@@ -1032,6 +1083,16 @@ export const update = (model: Model, message: Message) =>
     CompletedShareInvite: ({ outcome }) => ({
       model: setInvite(model, inviteAfterShare(outcome)),
     }),
+
+    ClickedCancelInvite: () =>
+      withFriendScreen(model, screen =>
+        FriendRoom.guards.WaitingForGuest(screen.room)
+          ? cancelInvite(model, screen)
+          : { model },
+      ),
+
+    CompletedCancelInvite: ({ code, outcome }) =>
+      outcome === 'Joined' ? restoreJoinedGame(model, code) : { model },
 
     // The button's Mount has already asked for permission (see
     // AskForTurnAlerts); this only shows that it's waiting.

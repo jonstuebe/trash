@@ -24,6 +24,7 @@ import {
   ServerMessageJson,
   type Shuffle,
   applyMove,
+  cancellationOf,
   cleanPlayerName,
   isRoomCode,
   lifetimeOf,
@@ -41,10 +42,12 @@ const ROOM_KEY = 'room'
 const CODE_KEY = 'code'
 const pushKey = (seatIndex: number) => `push:${seatIndex}`
 
-const ROOM_PATH = /^\/api\/rooms\/([A-Z0-9]+)\/(socket|push|summary)$/
+const ROOM_PATH = /^\/api\/rooms\/([A-Z0-9]+)\/(socket|push|summary|invite)$/
 
-// Sent to open sockets when a Room expires, just before it deletes itself.
+// Sent to open sockets when a Room expires or its invite is cancelled, just
+// before it deletes itself.
 const EXPIRED_CLOSE_CODE = 4001
+const CANCELLED_CLOSE_CODE = 4002
 
 const shuffle: Shuffle = cards =>
   Effect.runSync(
@@ -115,21 +118,42 @@ export class Room extends DurableObject<Env> {
   // Nobody has touched the game for its whole lifetime. deleteAll also
   // clears the alarm (compatibility date 2026-02-24 and later), and an empty
   // Durable Object stops existing once it shuts down.
+  override async alarm(): Promise<void> {
+    await this.end(EXPIRED_CLOSE_CODE, 'Expired')
+  }
+
   // A player looking at the game is told it's gone, the same way as a link
   // to a game that never existed.
-  override async alarm(): Promise<void> {
+  private async end(closeCode: number, reason: string): Promise<void> {
     const gone = encodeServerMessage(
       ServerMessage.Refused({ reason: 'Missing' }),
     )
     this.ctx.getWebSockets().forEach(socket => {
       try {
         socket.send(gone)
-        socket.close(EXPIRED_CLOSE_CODE, 'Expired')
+        socket.close(closeCode, reason)
       } catch {
         // Already closed.
       }
     })
     await this.ctx.storage.deleteAll()
+  }
+
+  // The host called off an invite nobody joined, so a friend opening the link
+  // later finds the game gone.
+  private async cancel(url: URL): Promise<Response> {
+    const deviceId = url.searchParams.get('device') ?? ''
+    const cancellation = cancellationOf(this.load(), deviceId)
+    if (cancellation === 'Delete') {
+      await this.end(CANCELLED_CLOSE_CODE, 'Cancelled')
+    }
+    if (cancellation === 'Joined') {
+      return new Response('Already joined', { status: 409 })
+    }
+    if (cancellation === 'NotHost') {
+      return new Response('Not the host', { status: 403 })
+    }
+    return new Response(null, { status: 204 })
   }
 
   private summary(url: URL): Response {
@@ -254,6 +278,9 @@ export class Room extends DurableObject<Env> {
     if (route === 'summary') {
       return this.summary(url)
     }
+    if (route === 'invite') {
+      return this.cancel(url)
+    }
 
     const deviceId = url.searchParams.get('device') ?? ''
     const maybeIntent = decodeIntent(url.searchParams.get('intent'))
@@ -374,6 +401,9 @@ export default {
       return new Response('Method not allowed', { status: 405 })
     }
     if (route === 'summary' && request.method !== 'GET') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+    if (route === 'invite' && request.method !== 'DELETE') {
       return new Response('Method not allowed', { status: 405 })
     }
     if (route === 'socket' && request.headers.get('Upgrade') !== 'websocket') {

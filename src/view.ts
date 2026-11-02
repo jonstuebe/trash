@@ -1460,7 +1460,19 @@ const lobbyView = (
             ['Send invite'],
           ),
           alertsButton(turnAlerts, 'Alert me on my turn', h),
-          backToMenuButton(h),
+          h.div(
+            [h.Class('pill-row')],
+            [
+              backToMenuButton(h),
+              h.button(
+                [
+                  h.Class('pill glass'),
+                  h.OnClick(Message.ClickedCancelInvite()),
+                ],
+                ['Cancel invite'],
+              ),
+            ],
+          ),
         ],
       ),
     ],
