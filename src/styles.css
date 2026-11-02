@@ -21,16 +21,38 @@
   --column: min(100vw, 440px);
   --gutter: 16px;
   --slot-gap: 8px;
-  --card-w: min(
-    calc((var(--column) - 2 * var(--gutter) - 4 * var(--slot-gap)) / 5),
-    78px
+  /* The visible viewport. Mobile Safari's dvh excludes its toolbars, so a
+     screen sized to it never scrolls. Plain vh is the fallback. */
+  --app-h: 100vh;
+  --avatar: clamp(44px, calc(var(--app-h) * 0.085), 76px);
+  /* Height of everything on the table that isn't a card. */
+  --table-fixed: 360px;
+  --table-chrome: calc(
+    env(safe-area-inset-top) + env(safe-area-inset-bottom) +
+      var(--table-fixed) + var(--avatar)
   );
-  --card-h: calc(var(--card-w) * 1.36);
+  /* Cards fit the width (five slots per row) and the height (two slot rows
+     plus the held card). */
+  --table-card-w: max(
+    32px,
+    min(
+      calc((var(--column) - 2 * var(--gutter) - 4 * var(--slot-gap)) / 5),
+      calc((var(--app-h) - var(--table-chrome)) / 4.45),
+      78px
+    )
+  );
+  --card-w: var(--table-card-w);
   --font:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter',
     system-ui, 'Helvetica Neue', sans-serif;
   --font-rounded:
     ui-rounded, 'SF Pro Rounded', -apple-system, system-ui, sans-serif;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --app-h: 100dvh;
+  }
 }
 
 * {
@@ -39,6 +61,8 @@
 
 html,
 body {
+  height: 100%;
+  overflow: hidden;
   margin: 0;
   background: var(--bg);
   color: var(--label);
@@ -71,7 +95,7 @@ button:focus-visible {
 
 .app {
   position: relative;
-  min-height: 100dvh;
+  height: var(--app-h);
   overflow: hidden;
   isolation: isolate;
 }
@@ -333,7 +357,7 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-height: 100dvh;
+  height: var(--app-h);
   box-sizing: border-box;
   max-width: 440px;
   margin: 0 auto;
@@ -437,7 +461,7 @@ button:focus-visible {
 .table {
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  height: var(--app-h);
   box-sizing: border-box;
   max-width: 440px;
   margin: 0 auto;
@@ -483,7 +507,7 @@ button:focus-visible {
 .opponents {
   display: flex;
   justify-content: space-evenly;
-  margin: 18px 0 0;
+  margin: 8px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -508,10 +532,10 @@ button:focus-visible {
 .avatar {
   display: grid;
   place-items: center;
-  width: 76px;
-  height: 76px;
+  width: var(--avatar);
+  height: var(--avatar);
   border-radius: 50%;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   transition: box-shadow 0.4s;
 }
 
@@ -524,7 +548,7 @@ button:focus-visible {
 }
 
 .avatar-emoji {
-  font-size: 46px;
+  font-size: calc(var(--avatar) * 0.6);
   line-height: 1;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
 }
@@ -609,8 +633,8 @@ button:focus-visible {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 16px;
-  min-height: calc(var(--card-h) * 1.45 + 60px);
+  gap: 12px;
+  min-height: 0;
 }
 
 .piles {
@@ -720,7 +744,7 @@ button:focus-visible {
 }
 
 .held {
-  --card-w: min(calc(var(--column) * 0.27), 112px);
+  --card-w: min(calc(var(--column) * 0.27), 112px, var(--table-card-w) * 1.25);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -781,7 +805,7 @@ button:focus-visible {
 /* BOARD */
 
 .board {
-  padding: 14px 0 4px;
+  padding: 8px 0 0;
   opacity: 0.7;
   transition: opacity 0.4s;
 }
@@ -882,7 +906,7 @@ button:focus-visible {
 .actions {
   display: flex;
   gap: 12px;
-  margin-top: 18px;
+  margin-top: 12px;
 }
 
 /* SHEETS */
@@ -1163,6 +1187,48 @@ button:focus-visible {
 }
 
 /* MOTION */
+
+/* SHORT SCREENS
+   Mobile Safari with its toolbars showing, or small phones. Tighten the
+   table's chrome so the cards can stay large. */
+
+@media (max-height: 720px) {
+  :root {
+    --table-fixed: 300px;
+  }
+
+  .table-header {
+    height: 40px;
+  }
+
+  .opponent-name {
+    font-size: 14px;
+  }
+
+  .opponent-score {
+    font-size: 17px;
+  }
+
+  .opponent .pips {
+    display: none;
+  }
+
+  .board-header {
+    padding-bottom: 6px;
+  }
+
+  .board-score {
+    font-size: 18px;
+  }
+
+  .status {
+    font-size: 16px;
+  }
+
+  .actions .pill {
+    height: 50px;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,
