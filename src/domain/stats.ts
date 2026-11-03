@@ -123,6 +123,13 @@ export const isFinished = (game: Game): boolean =>
 export const friendGameKey = (code: string, game: Game): string =>
   `${code}:${game.sequence}`
 
+// Whether recording a game just counted a win for the person: the step
+// that records a game is the one that finishes it, and it records each game
+// once, so a win is celebrated once (not on reload, reconnecting or
+// reopening it), while a rematch that's won counts again.
+export const isNewWin = (before: Stats, after: Stats): boolean =>
+  after.total.won > before.total.won
+
 // TRANSITIONS
 
 const fewer = (

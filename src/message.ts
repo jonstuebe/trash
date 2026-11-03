@@ -100,6 +100,7 @@ export const Message = defineMessageUnion({
   SucceededSendReaction: {},
   FailedSendReaction: {},
   CompletedWaitBeforeHideReaction: { id: Schema.Number },
+  FinishedConfetti: {},
   ClickedInvite: {},
   ClickedShareCode: {},
   CompletedShareInvite: { kind: InviteKind, outcome: ShareOutcome },
