@@ -27,8 +27,10 @@ import {
   takeDiscard,
   trashHeld,
 } from './domain/game'
+import { REACTION_SHOW_MS, Reaction } from './domain/reaction'
 import {
   ClientMessageJson,
+  ClientReactionJson,
   GameSummary,
   GameSummaryJson,
   type Intent,
@@ -68,11 +70,14 @@ import {
   Guide,
   Invite,
   Model,
+  ReactionTray,
+  type Reactions,
   SavedFriendGame,
   Screen,
   SoundSetting,
   StatsStep,
   TurnAlerts,
+  noReactions,
 } from './model'
 import { RoomSocket, type RoomSocketService } from './roomSocket'
 import { playSound } from './sound'
@@ -102,6 +107,7 @@ const friendScreen = (code: string, intent: Intent): Screen =>
     room: FriendRoom.Loading(),
     connection: Connection.Connecting(),
     invite: Invite.Idle(),
+    reactions: noReactions,
   })
 
 const unknownRow = (saved: SavedFriendGame): FriendGameRow => ({
@@ -380,6 +386,31 @@ export const SendMove = Command.define('SendMove', {
     }).pipe(
       Effect.as(Message.SucceededSendMove()),
       Effect.catch(() => Effect.succeed(Message.FailedSendMove())),
+    ),
+})
+
+export const SendReaction = Command.define('SendReaction', {
+  args: { reaction: Reaction },
+  messages: [Message.SucceededSendReaction, Message.FailedSendReaction],
+  execute: ({ reaction }) =>
+    Effect.gen(function* () {
+      const connection = yield* RoomSocket.get
+      const json = yield* Schema.encodeEffect(ClientReactionJson)({
+        reaction,
+      })
+      yield* Effect.try(() => connection.socket.send(json))
+    }).pipe(
+      Effect.as(Message.SucceededSendReaction()),
+      Effect.catch(() => Effect.succeed(Message.FailedSendReaction())),
+    ),
+})
+
+export const WaitBeforeHideReaction = Command.define('WaitBeforeHideReaction', {
+  args: { id: Schema.Number },
+  messages: [Message.CompletedWaitBeforeHideReaction],
+  execute: ({ id }) =>
+    Effect.sleep(Duration.millis(REACTION_SHOW_MS)).pipe(
+      Effect.as(Message.CompletedWaitBeforeHideReaction({ id })),
     ),
 })
 
@@ -860,6 +891,7 @@ const receiveServerMessage = (
           ],
         }
       },
+      Reacted: ({ seat, reaction }) => receiveReaction(model, seat, reaction),
       Refused: ({ reason }) =>
         forgetFriendGame(
           setFriendScreen(
@@ -894,6 +926,102 @@ const markDisconnected = (model: Model): UpdateReturn =>
     model: setFriendScreen(
       model,
       modifyFields(screen, { connection: () => Connection.Disconnected() }),
+    ),
+  }))
+
+// REACTIONS
+
+const setReactions = (
+  model: Model,
+  screen: FriendScreen,
+  f: (reactions: Reactions) => Reactions,
+): Model => setFriendScreen(model, modifyFields(screen, { reactions: f }))
+
+const setReactionTray = (model: Model, tray: ReactionTray): UpdateReturn =>
+  withFriendScreen(model, screen => ({
+    model: setReactions(model, screen, reactions =>
+      modifyFields(reactions, { tray: () => tray }),
+    ),
+  }))
+
+const isShowingFrom = (reactions: Reactions, seat: number): boolean =>
+  Array.some(reactions.shown, shown => shown.seat === seat)
+
+// Puts a reaction on screen, in place of any the same seat still has
+// showing. The caller starts the timer that takes it down.
+const withReactionShown = (
+  screen: FriendScreen,
+  seat: number,
+  reaction: Reaction,
+): FriendScreen =>
+  modifyFields(screen, {
+    reactions: reactions =>
+      modifyFields(reactions, {
+        shown: shown =>
+          Array.append(
+            Array.filter(shown, other => other.seat !== seat),
+            { id: reactions.nextId, seat, reaction },
+          ),
+        nextId: nextId => nextId + 1,
+      }),
+  })
+
+const canReact = (screen: FriendScreen): boolean =>
+  FriendRoom.guards.Playing(screen.room) &&
+  Connection.guards.Connected(screen.connection)
+
+// The player's own reaction shows on their screen at once. They can't send
+// another until it's gone, which keeps a tap-happy player from flooding the
+// other screen.
+const sendReaction = (model: Model, reaction: Reaction): UpdateReturn =>
+  withFriendScreen(model, screen => {
+    if (!canReact(screen) || isShowingFrom(screen.reactions, screen.seat)) {
+      return { model }
+    }
+    const closed = modifyFields(screen, {
+      reactions: reactions =>
+        modifyFields(reactions, { tray: () => ReactionTray.Closed() }),
+    })
+    return {
+      model: setFriendScreen(
+        model,
+        withReactionShown(closed, screen.seat, reaction),
+      ),
+      commands: [
+        SendReaction({ reaction }),
+        WaitBeforeHideReaction({ id: screen.reactions.nextId }),
+      ],
+    }
+  })
+
+const receiveReaction = (
+  model: Model,
+  seat: number,
+  reaction: Reaction,
+): UpdateReturn =>
+  withFriendScreen(model, screen =>
+    FriendRoom.guards.Playing(screen.room)
+      ? {
+          model: setFriendScreen(
+            model,
+            withReactionShown(screen, seat, reaction),
+          ),
+          commands: [
+            WaitBeforeHideReaction({ id: screen.reactions.nextId }),
+            ...(SoundSetting.guards.On(model.sound)
+              ? [PlaySound({ sound: 'Reaction' })]
+              : []),
+          ],
+        }
+      : { model },
+  )
+
+const hideReaction = (model: Model, id: number): UpdateReturn =>
+  withFriendScreen(model, screen => ({
+    model: setReactions(model, screen, reactions =>
+      modifyFields(reactions, {
+        shown: shown => Array.filter(shown, other => other.id !== id),
+      }),
     ),
   }))
 
@@ -1245,6 +1373,30 @@ export const update = (model: Model, message: Message) =>
           ? { model }
           : markDisconnected(model),
       ),
+
+    ClickedReact: () =>
+      withFriendScreen(model, screen =>
+        setReactionTray(
+          model,
+          ReactionTray.guards.Open(screen.reactions.tray) || !canReact(screen)
+            ? ReactionTray.Closed()
+            : ReactionTray.Open(),
+        ),
+      ),
+
+    ClickedOutsideReactions: () =>
+      setReactionTray(model, ReactionTray.Closed()),
+
+    PressedEscapeOnReactions: () =>
+      setReactionTray(model, ReactionTray.Closed()),
+
+    SelectedReaction: ({ reaction }) => sendReaction(model, reaction),
+
+    SucceededSendReaction: () => ({ model }),
+
+    FailedSendReaction: () => markDisconnected(model),
+
+    CompletedWaitBeforeHideReaction: ({ id }) => hideReaction(model, id),
 
     ClickedInvite: () =>
       withFriendScreen(model, screen => ({

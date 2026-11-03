@@ -4,6 +4,7 @@ import { defineMessageUnion } from 'foldkit/message'
 import { Dialog } from '@foldkit/ui'
 
 import { Card } from './domain/card'
+import { Reaction } from './domain/reaction'
 import { GameSummary, ServerMessage } from './domain/room'
 
 export const ShareOutcome = Schema.Literals([
@@ -92,6 +93,13 @@ export const Message = defineMessageUnion({
   ClickedReconnect: {},
   ReturnedToApp: {},
   LeftApp: {},
+  ClickedReact: {},
+  ClickedOutsideReactions: {},
+  PressedEscapeOnReactions: {},
+  SelectedReaction: { reaction: Reaction },
+  SucceededSendReaction: {},
+  FailedSendReaction: {},
+  CompletedWaitBeforeHideReaction: { id: Schema.Number },
   ClickedInvite: {},
   ClickedShareCode: {},
   CompletedShareInvite: { kind: InviteKind, outcome: ShareOutcome },

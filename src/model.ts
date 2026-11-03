@@ -4,6 +4,7 @@ import { defineTaggedUnion } from 'foldkit/schema'
 import { Dialog } from '@foldkit/ui'
 
 import { Game } from './domain/game'
+import { Reaction } from './domain/reaction'
 import { GameSummary, Intent, Refusal } from './domain/room'
 import { Stats } from './domain/stats'
 import { InviteKind } from './message'
@@ -63,6 +64,34 @@ export const Invite = defineTaggedUnion({
 })
 export type Invite = typeof Invite.Type
 
+// A reaction on screen, from either seat. The id lets its hide timer find it
+// again after a newer one from the same seat has replaced it.
+export const ShownReaction = Schema.Struct({
+  id: Schema.Number,
+  seat: Schema.Number,
+  reaction: Reaction,
+})
+export type ShownReaction = typeof ShownReaction.Type
+
+export const ReactionTray = defineTaggedUnion({
+  Closed: {},
+  Open: {},
+})
+export type ReactionTray = typeof ReactionTray.Type
+
+export const Reactions = Schema.Struct({
+  tray: ReactionTray,
+  shown: Schema.Array(ShownReaction),
+  nextId: Schema.Number,
+})
+export type Reactions = typeof Reactions.Type
+
+export const noReactions: Reactions = {
+  tray: ReactionTray.Closed(),
+  shown: [],
+  nextId: 0,
+}
+
 export const Screen = defineTaggedUnion({
   Title: {},
   Naming: { draft: Schema.String, next: AfterNaming },
@@ -76,6 +105,7 @@ export const Screen = defineTaggedUnion({
     room: FriendRoom,
     connection: Connection,
     invite: Invite,
+    reactions: Reactions,
   },
 })
 export type Screen = typeof Screen.Type

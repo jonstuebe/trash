@@ -25,6 +25,7 @@ import {
   revealedCount,
   topDiscard,
 } from './domain/game'
+import { REACTIONS, emojiOf, labelOf } from './domain/reaction'
 import {
   GameSummary,
   PLAYER_NAME_MAX_LENGTH,
@@ -46,6 +47,8 @@ import {
   HomeScreen,
   Invite,
   type Model,
+  ReactionTray,
+  type Reactions,
   Screen,
   SoundSetting,
   StatsStep,
@@ -225,6 +228,14 @@ const soundButton = (sound: SoundSetting, className: string, h: H): Html =>
       h.OnMount(ToggleSound()),
     ],
     [speakerIcon(sound, h)],
+  )
+
+// A smiley face, for sending a reaction.
+const smileyIcon = (h: H): Html =>
+  strokeIcon(
+    'smiley',
+    'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM8.5 14a4 4 0 0 0 7 0M9 9.5v.5M15 9.5v.5',
+    h,
   )
 
 const bellIcon = (h: H): Html =>
@@ -1551,25 +1562,131 @@ const guideDialog = (model: Model, h: H): Html =>
     },
   })
 
-// TABLE
+// REACTIONS
 
-const tableHeader = (game: Game, sound: SoundSetting, h: H): Html =>
-  h.header(
-    [h.Class('table-header')],
+// The react button and its tray of emoji. It sits above the round and game
+// over sheets, so players can still react between rounds and at the end.
+const reactControl = (
+  reactions: Reactions,
+  connection: Connection,
+  viewer: number,
+  h: H,
+): Html => {
+  const isOpen = ReactionTray.guards.Open(reactions.tray)
+  const isWaiting = Array.some(reactions.shown, shown => shown.seat === viewer)
+  return h.div(
+    [h.Class('react-control')],
     [
+      isOpen
+        ? h.div([
+            h.Class('react-dismiss'),
+            h.OnClick(Message.ClickedOutsideReactions()),
+          ])
+        : h.empty,
       h.button(
         [
           h.Class('round-button glass'),
-          h.AriaLabel('Leave table'),
-          h.OnClick(Message.ClickedLeaveTable()),
+          h.AriaLabel('React'),
+          h.AriaExpanded(isOpen),
+          h.Disabled(!Connection.guards.Connected(connection) || isWaiting),
+          h.OnClick(Message.ClickedReact()),
         ],
-        [xmarkIcon(h)],
+        [smileyIcon(h)],
+      ),
+      isOpen
+        ? h.div(
+            [
+              h.Class('react-tray material'),
+              h.Role('toolbar'),
+              h.AriaLabel('Reactions'),
+              h.OnKeyDownPreventDefault(key =>
+                key === 'Escape'
+                  ? Option.some(Message.PressedEscapeOnReactions())
+                  : Option.none(),
+              ),
+            ],
+            [
+              h.div(
+                [h.Class('react-strip')],
+                Array.map(REACTIONS, reaction =>
+                  h.button(
+                    [
+                      h.Class('react-option'),
+                      h.AriaLabel(labelOf(reaction)),
+                      h.OnClick(Message.SelectedReaction({ reaction })),
+                    ],
+                    [emojiOf(reaction)],
+                  ),
+                ),
+              ),
+            ],
+          )
+        : h.empty,
+    ],
+  )
+}
+
+// The reactions on screen: the other player's near the top, by their
+// avatar, and your own lower down.
+const reactionLayer = (reactions: Reactions, table: Table, h: H): Html =>
+  h.div(
+    [h.Class('reaction-layer'), h.Role('status'), h.AriaLive('polite')],
+    Array.map(reactions.shown, shown =>
+      h.keyed('div')(
+        `${shown.id}`,
+        [
+          h.Class(
+            `reaction-burst ${isMe(table, shown.seat) ? 'is-mine' : 'is-theirs'}`,
+          ),
+          h.AriaLabel(
+            `${displayName(table, shown.seat)}: ${labelOf(shown.reaction)}`,
+          ),
+        ],
+        [h.span([h.AriaHidden(true)], [emojiOf(shown.reaction)])],
+      ),
+    ),
+  )
+
+// TABLE
+
+const tableHeader = (
+  table: Table,
+  sound: SoundSetting,
+  maybeReactions: Option.Option<Reactions>,
+  h: H,
+): Html =>
+  h.header(
+    [h.Class('table-header')],
+    [
+      h.div(
+        [h.Class('table-header-start')],
+        [
+          h.button(
+            [
+              h.Class('round-button glass'),
+              h.AriaLabel('Leave table'),
+              h.OnClick(Message.ClickedLeaveTable()),
+            ],
+            [xmarkIcon(h)],
+          ),
+          Option.match(
+            Option.all({
+              reactions: maybeReactions,
+              connection: table.maybeConnection,
+            }),
+            {
+              onNone: () => h.empty,
+              onSome: ({ reactions, connection }) =>
+                reactControl(reactions, connection, table.viewer, h),
+            },
+          ),
+        ],
       ),
       h.div(
         [h.Class('round-title')],
         [
           h.span([h.Class('round-eyebrow')], ['Round']),
-          h.span([h.Class('round-number')], [`${game.round}`]),
+          h.span([h.Class('round-number')], [`${table.game.round}`]),
         ],
       ),
       h.div(
@@ -1602,11 +1719,16 @@ const phaseSheet = (table: Table, h: H): Html =>
     () => h.empty,
   )
 
-const tableView = (table: Table, sound: SoundSetting, h: H): Html =>
+const tableView = (
+  table: Table,
+  sound: SoundSetting,
+  maybeReactions: Option.Option<Reactions>,
+  h: H,
+): Html =>
   h.main(
     [h.Class('table')],
     [
-      tableHeader(table.game, sound, h),
+      tableHeader(table, sound, maybeReactions, h),
       opponentsView(table, h),
       tableCenterView(table, h),
       boardView(table, h),
@@ -1972,7 +2094,12 @@ const friendView = (
     WaitingForGuest: () =>
       lobbyView(screen.code, screen.invite, screen.connection, turnAlerts, h),
     Playing: ({ game }) =>
-      tableView(friendTable(screen, game, turnAlerts), sound, h),
+      tableView(
+        friendTable(screen, game, turnAlerts),
+        sound,
+        Option.some(screen.reactions),
+        h,
+      ),
     Refused: ({ reason }) => refusedView(reason, h),
   })
 
@@ -2002,6 +2129,27 @@ const screenTable = (model: Model): Option.Option<Table> =>
         () => Option.none(),
       ),
   })
+
+const friendReactionLayer = (model: Model, h: H): Html =>
+  Screen.matchOrElse(
+    model.screen,
+    {
+      Friend: friend =>
+        FriendRoom.matchOrElse(
+          friend.room,
+          {
+            Playing: ({ game }) =>
+              reactionLayer(
+                friend.reactions,
+                friendTable(friend, game, model.turnAlerts),
+                h,
+              ),
+          },
+          () => h.empty,
+        ),
+    },
+    () => h.empty,
+  )
 
 // VIEW
 
@@ -2087,13 +2235,15 @@ export const view = (model: Model, h: H): Document => ({
         JoiningGame: screen => joiningView(screen, h),
         StartingFriendGame: () =>
           friendNotice('Setting up…', 'Making your game.', [], h),
-        Table: ({ game }) => tableView(botTable(game), model.sound, h),
+        Table: ({ game }) =>
+          tableView(botTable(game), model.sound, Option.none(), h),
         Friend: screen => friendView(screen, model.turnAlerts, model.sound, h),
       }),
       Option.match(screenTable(model), {
         onNone: () => h.empty,
         onSome: table => phaseSheet(table, h),
       }),
+      friendReactionLayer(model, h),
       guideDialog(model, h),
       updateBanner(model, h),
       SoundSetting.guards.On(model.sound)

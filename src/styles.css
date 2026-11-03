@@ -860,6 +860,126 @@ button.glass:active:not(:disabled) {
   font-weight: 600;
 }
 
+.table-header-start {
+  display: flex;
+  gap: 8px;
+  justify-self: start;
+}
+
+.round-button .smiley {
+  width: 22px;
+  height: 22px;
+}
+
+.react-control .round-button:disabled {
+  opacity: 0.5;
+}
+
+/* REACTIONS
+   The react button and its tray sit above the round and game over sheets
+   (z-index 10), so players can react between rounds and after the game. */
+
+.react-control {
+  position: relative;
+  z-index: 11;
+}
+
+.react-dismiss {
+  position: fixed;
+  inset: 0;
+}
+
+.react-control .react-tray {
+  position: absolute;
+  top: 52px;
+  left: -52px;
+  max-width: calc(100vw - 2 * var(--gutter));
+  border-radius: 26px;
+  overflow: hidden;
+  animation: react-tray-in 0.25s var(--sheet-curve) backwards;
+}
+
+/* Eight fit on a 375pt phone; on a narrower one the row scrolls. */
+.react-strip {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 5px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.react-strip::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes react-tray-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+}
+
+.react-option {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  font-size: 24px;
+  line-height: 1;
+  scroll-snap-align: start;
+}
+
+.react-option:active {
+  transform: scale(1.2);
+}
+
+.reaction-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+}
+
+.reaction-burst {
+  position: absolute;
+  left: 50%;
+  font-size: 64px;
+  line-height: 1;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.35));
+  animation:
+    reaction-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards,
+    reaction-fade 0.4s ease-in 1.6s forwards;
+}
+
+.reaction-burst.is-theirs {
+  top: calc(env(safe-area-inset-top) + 120px);
+}
+
+.reaction-burst.is-mine {
+  bottom: calc(env(safe-area-inset-bottom) + 38%);
+}
+
+@keyframes reaction-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(16px) scale(0.4);
+  }
+}
+
+@keyframes reaction-fade {
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-24px);
+  }
+}
+
 /* OPPONENTS */
 
 .opponents {

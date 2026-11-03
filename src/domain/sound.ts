@@ -23,6 +23,7 @@ export const Sound = Schema.Literals([
   'Win',
   'Lose',
   'Tie',
+  'Reaction',
 ])
 export type Sound = typeof Sound.Type
 

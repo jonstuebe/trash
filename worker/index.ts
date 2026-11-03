@@ -14,7 +14,14 @@ import {
   alertsFor,
 } from '../src/domain/push'
 import {
+  Delivery,
+  Reaction,
+  deliveryOf,
+  isReactionAllowed,
+} from '../src/domain/reaction'
+import {
   ClientMessageJson,
+  ClientReactionJson,
   GameSummaryJson,
   Intent,
   type Refusal,
@@ -29,6 +36,7 @@ import {
   isRoomCode,
   lifetimeOf,
   nameSeat,
+  otherSeat,
   roomPath,
   seat,
   seatOfDevice,
@@ -41,6 +49,7 @@ import { type Freshness, sendPush } from './webPush'
 const ROOM_KEY = 'room'
 const CODE_KEY = 'code'
 const pushKey = (seatIndex: number) => `push:${seatIndex}`
+const heldReactionKey = (seatIndex: number) => `reaction:${seatIndex}`
 
 const ROOM_PATH = /^\/api\/rooms\/([A-Z0-9]+)\/(socket|push|summary|invite)$/
 
@@ -73,6 +82,8 @@ const nowMillis = (): number => Effect.runSync(Clock.currentTimeMillis)
 const encodeServerMessage = Schema.encodeSync(ServerMessageJson)
 const encodeSummary = Schema.encodeSync(GameSummaryJson)
 const decodeClientMessage = Schema.decodeUnknownOption(ClientMessageJson)
+const decodeClientReaction = Schema.decodeUnknownOption(ClientReactionJson)
+const decodeReaction = Schema.decodeUnknownOption(Reaction)
 const encodeRoom = Schema.encodeSync(RoomJson)
 const decodeRoom = Schema.decodeUnknownOption(RoomJson)
 const decodeIntent = Schema.decodeUnknownOption(Intent)
@@ -96,6 +107,10 @@ const seatOf = (socket: WebSocket): Option.Option<number> =>
 // One Room per invite code. Sockets use the hibernation API, so a game that
 // sits for days between turns costs nothing while nobody is connected.
 export class Room extends DurableObject<Env> {
+  // NOTE: kept in memory only, so it resets when the Room hibernates. It's a
+  // spam guard, not a record.
+  private readonly lastReactionAt = new Map<number, number>()
+
   private load(): Option.Option<RoomState> {
     return Option.flatMap(
       Option.fromNullishOr(this.ctx.storage.kv.get<string>(ROOM_KEY)),
@@ -191,9 +206,7 @@ export class Room extends DurableObject<Env> {
       return
     }
 
-    const connectedSeats = this.ctx
-      .getWebSockets()
-      .flatMap(socket => Option.toArray(seatOf(socket)))
+    const connectedSeats = this.connectedSeats()
     const vapid = {
       publicKey: VAPID_PUBLIC_KEY,
       privateKey,
@@ -260,6 +273,74 @@ export class Room extends DurableObject<Env> {
     return new Response(null, { status: 204 })
   }
 
+  private connectedSeats(): ReadonlyArray<number> {
+    return this.ctx
+      .getWebSockets()
+      .flatMap(socket => Option.toArray(seatOf(socket)))
+  }
+
+  // Passes a reaction to the other player, or holds the latest one for
+  // when they next open the game. Reactions aren't part of the Game, so
+  // they don't touch the sequence or push back the Room's expiry.
+  private react(socket: WebSocket, reaction: Reaction): void {
+    const maybeSeat = seatOf(socket)
+    const isPlaying = Option.exists(this.load(), room =>
+      Option.isSome(room.maybeGame),
+    )
+    if (Option.isNone(maybeSeat) || !isPlaying) {
+      return
+    }
+    const senderSeat = maybeSeat.value
+    const now = nowMillis()
+    if (
+      !isReactionAllowed(
+        Option.fromNullishOr(this.lastReactionAt.get(senderSeat)),
+        now,
+      )
+    ) {
+      return
+    }
+    this.lastReactionAt.set(senderSeat, now)
+
+    Delivery.match(deliveryOf(senderSeat, this.connectedSeats()), {
+      Live: ({ seat: toSeat }) => {
+        const message = encodeServerMessage(
+          ServerMessage.Reacted({ seat: senderSeat, reaction }),
+        )
+        this.ctx.getWebSockets().forEach(other => {
+          if (Option.contains(seatOf(other), toSeat)) {
+            try {
+              other.send(message)
+            } catch {
+              // Already closed.
+            }
+          }
+        })
+      },
+      Hold: ({ seat: toSeat }) => {
+        this.ctx.storage.kv.put(heldReactionKey(toSeat), reaction)
+      },
+    })
+  }
+
+  private deliverHeldReaction(socket: WebSocket, seatIndex: number): void {
+    const maybeReaction = decodeReaction(
+      this.ctx.storage.kv.get<string>(heldReactionKey(seatIndex)),
+    )
+    if (Option.isNone(maybeReaction)) {
+      return
+    }
+    this.ctx.storage.kv.delete(heldReactionKey(seatIndex))
+    socket.send(
+      encodeServerMessage(
+        ServerMessage.Reacted({
+          seat: otherSeat(seatIndex),
+          reaction: maybeReaction.value,
+        }),
+      ),
+    )
+  }
+
   private refuse(reason: Refusal): Response {
     const { 0: client, 1: server } = new WebSocketPair()
     server.accept()
@@ -320,6 +401,7 @@ export class Room extends DurableObject<Env> {
     server.serializeAttachment({ seat: seatIndex } satisfies Attachment)
 
     this.broadcast(room)
+    this.deliverHeldReaction(server, seatIndex)
 
     // The guest's arrival deals the first round.
     const wasWaiting = Option.match(maybeRoom, {
@@ -337,6 +419,14 @@ export class Room extends DurableObject<Env> {
     socket: WebSocket,
     data: string | ArrayBuffer,
   ): Promise<void> {
+    if (typeof data === 'string') {
+      const maybeReaction = decodeClientReaction(data)
+      if (Option.isSome(maybeReaction)) {
+        this.react(socket, maybeReaction.value.reaction)
+        return
+      }
+    }
+
     const maybeMessage =
       typeof data === 'string' ? decodeClientMessage(data) : Option.none()
 
