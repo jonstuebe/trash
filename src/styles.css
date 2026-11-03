@@ -939,6 +939,17 @@ button.glass:active:not(:disabled) {
   transform: scale(1.2);
 }
 
+/* Win confetti: above the table, the round and game over sheets, the react
+   control and reactions; never takes a tap. */
+.confetti {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 13;
+  pointer-events: none;
+}
+
 .reaction-layer {
   position: fixed;
   inset: 0;

@@ -46,6 +46,7 @@ import {
 import { Sound, soundFor } from './domain/sound'
 import {
   Stats,
+  isNewWin,
   recordBotGame,
   recordFriendGame,
   resetStats,
@@ -60,6 +61,7 @@ import {
 import {
   AfterNaming,
   AppUpdate,
+  Celebration,
   Connection,
   type Flags,
   type FriendGameRow,
@@ -108,6 +110,7 @@ const friendScreen = (code: string, intent: Intent): Screen =>
     connection: Connection.Connecting(),
     invite: Invite.Idle(),
     reactions: noReactions,
+    celebration: Celebration.Quiet(),
   })
 
 const unknownRow = (saved: SavedFriendGame): FriendGameRow => ({
@@ -330,6 +333,34 @@ export const SaveStats = Command.define('SaveStats', {
 
 // The record functions hand back the same Stats when there's nothing to
 // count, so only a game that just got counted is written.
+// Confetti starts when recording a game counts a new win for the person.
+const celebrationAfter = (
+  celebration: Celebration,
+  before: Stats,
+  after: Stats,
+): Celebration =>
+  isNewWin(before, after) ? Celebration.Confetti() : celebration
+
+const finishConfetti = (model: Model): UpdateReturn =>
+  Screen.matchOrElse(
+    model.screen,
+    {
+      Table: screen => ({
+        model: modifyFields(model, {
+          screen: () =>
+            Screen.Table({ ...screen, celebration: Celebration.Quiet() }),
+        }),
+      }),
+      Friend: screen => ({
+        model: setFriendScreen(
+          model,
+          modifyFields(screen, { celebration: () => Celebration.Quiet() }),
+        ),
+      }),
+    },
+    () => ({ model }),
+  )
+
 const saveStatsIfChanged = (before: Stats, after: Stats) =>
   after === before ? [] : [SaveStats({ stats: after })]
 
@@ -557,7 +588,7 @@ const startBotGame = (model: Model): UpdateReturn => {
   const game = newBotGame()
   return {
     model: modifyFields(model, {
-      screen: () => Screen.Table({ game }),
+      screen: () => Screen.Table({ game, celebration: Celebration.Quiet() }),
     }),
     commands: followUpCommands(game),
   }
@@ -582,7 +613,7 @@ const stepBotGame = (
   Screen.matchOrElse(
     model.screen,
     {
-      Table: ({ game }) => {
+      Table: ({ game, celebration }) => {
         const nextGame = transition(game)
         if (nextGame === game) {
           return { model }
@@ -590,7 +621,11 @@ const stepBotGame = (
         const stats = recordBotGame(model.stats, game, nextGame)
         return {
           model: modifyFields(model, {
-            screen: () => Screen.Table({ game: nextGame }),
+            screen: () =>
+              Screen.Table({
+                game: nextGame,
+                celebration: celebrationAfter(celebration, model.stats, stats),
+              }),
             stats: () => stats,
           }),
           commands: [
@@ -876,6 +911,8 @@ const receiveServerMessage = (
               modifyFields(screen, {
                 seat: () => seat,
                 connection: () => Connection.Connected(),
+                celebration: celebration =>
+                  celebrationAfter(celebration, model.stats, stats),
                 room: () =>
                   RoomView.match(room, {
                     WaitingForGuest: () => FriendRoom.WaitingForGuest(),
@@ -1397,6 +1434,7 @@ export const update = (model: Model, message: Message) =>
     FailedSendReaction: () => markDisconnected(model),
 
     CompletedWaitBeforeHideReaction: ({ id }) => hideReaction(model, id),
+    FinishedConfetti: () => finishConfetti(model),
 
     ClickedInvite: () =>
       withFriendScreen(model, screen => ({

@@ -10,6 +10,7 @@ import {
   emptyStats,
   emptyTally,
   hasPlayed,
+  isNewWin,
   recordBotGame,
   recordFriendGame,
   recordResult,
@@ -180,6 +181,48 @@ describe('recordFriendGame', () => {
     )
     expect(stats.countedFriendGames.length).toBe(COUNTED_FRIEND_GAMES_LIMIT)
     expect(stats.friends.played).toBe(COUNTED_FRIEND_GAMES_LIMIT + 5)
+  })
+})
+
+describe('isNewWin', () => {
+  const playing = newBotGame()
+  const at = (phase: Phase) => finished(playing, phase)
+  const bot = (after: Game, before: Game = playing) =>
+    isNewWin(emptyStats, recordBotGame(emptyStats, before, after))
+
+  test('a bot game the person just won', () => {
+    expect(bot(at(Phase.GameOver({ winnerIndex: 0 })))).toBe(true)
+  })
+
+  test('a bot game the person just ended early ahead', () => {
+    expect(
+      bot(at(Phase.Ended({ enderIndex: 1, maybeWinnerIndex: Option.some(0) }))),
+    ).toBe(true)
+  })
+
+  test('not a loss, a tie, or a step that finishes nothing', () => {
+    expect(bot(at(Phase.GameOver({ winnerIndex: 1 })))).toBe(false)
+    expect(
+      bot(at(Phase.Ended({ enderIndex: 0, maybeWinnerIndex: Option.none() }))),
+    ).toBe(false)
+    expect(bot(playing)).toBe(false)
+  })
+
+  test('not a stale step that leaves a won game won', () => {
+    const over = at(Phase.GameOver({ winnerIndex: 0 }))
+    expect(bot(over, over)).toBe(false)
+  })
+
+  test('a friend game won once, not again when it is seen again', () => {
+    const over = finished(newFriendGame(), Phase.GameOver({ winnerIndex: 1 }))
+    const once = recordFriendGame(emptyStats, 'K7QXMP', over, 1)
+    expect(isNewWin(emptyStats, once)).toBe(true)
+    expect(isNewWin(once, recordFriendGame(once, 'K7QXMP', over, 1))).toBe(
+      false,
+    )
+    expect(
+      isNewWin(emptyStats, recordFriendGame(emptyStats, 'K7QXMP', over, 0)),
+    ).toBe(false)
   })
 })
 

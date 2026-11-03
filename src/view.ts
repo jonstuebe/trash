@@ -3,6 +3,7 @@ import type { Document, Html, HtmlBuilder } from 'foldkit/html'
 
 import { Dialog } from '@foldkit/ui'
 
+import { RainConfetti } from './confetti'
 import {
   type Card,
   type Suit,
@@ -38,6 +39,7 @@ import { Message } from './message'
 import {
   AfterNaming,
   AppUpdate,
+  Celebration,
   Connection,
   type FriendGameRow,
   FriendRoom,
@@ -2130,6 +2132,26 @@ const screenTable = (model: Model): Option.Option<Table> =>
       ),
   })
 
+// Over the table and its sheets, and never in the way of a tap.
+const confettiLayer = (model: Model, h: H): Html =>
+  Screen.matchOrElse(
+    model.screen,
+    {
+      Table: ({ celebration }) => confettiCanvas(celebration, h),
+      Friend: ({ celebration }) => confettiCanvas(celebration, h),
+    },
+    () => h.empty,
+  )
+
+const confettiCanvas = (celebration: Celebration, h: H): Html =>
+  Celebration.guards.Confetti(celebration)
+    ? h.canvas([
+        h.Class('confetti'),
+        h.AriaHidden(true),
+        h.OnMount(RainConfetti()),
+      ])
+    : h.empty
+
 const friendReactionLayer = (model: Model, h: H): Html =>
   Screen.matchOrElse(
     model.screen,
@@ -2244,6 +2266,7 @@ export const view = (model: Model, h: H): Document => ({
         onSome: table => phaseSheet(table, h),
       }),
       friendReactionLayer(model, h),
+      confettiLayer(model, h),
       guideDialog(model, h),
       updateBanner(model, h),
       SoundSetting.guards.On(model.sound)

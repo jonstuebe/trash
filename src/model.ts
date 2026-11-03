@@ -92,11 +92,19 @@ export const noReactions: Reactions = {
   nextId: 0,
 }
 
+// Confetti over the table after the person wins, once per win. It lives on
+// the game's screen, so leaving the game stops it.
+export const Celebration = defineTaggedUnion({
+  Quiet: {},
+  Confetti: {},
+})
+export type Celebration = typeof Celebration.Type
+
 export const Screen = defineTaggedUnion({
   Title: {},
   Naming: { draft: Schema.String, next: AfterNaming },
   JoiningGame: { draft: Schema.String },
-  Table: { game: Game },
+  Table: { game: Game, celebration: Celebration },
   StartingFriendGame: {},
   Friend: {
     code: Schema.String,
@@ -106,6 +114,7 @@ export const Screen = defineTaggedUnion({
     connection: Connection,
     invite: Invite,
     reactions: Reactions,
+    celebration: Celebration,
   },
 })
 export type Screen = typeof Screen.Type

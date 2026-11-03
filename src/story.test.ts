@@ -47,6 +47,7 @@ import {
 import {
   AfterNaming,
   AppUpdate,
+  Celebration,
   Connection,
   FriendRoom,
   GUIDE_DIALOG_ID,
@@ -65,7 +66,7 @@ import {
 const DEVICE_ID = 'device-0000-0000-0000'
 
 const atTable = (game: Game): Model => ({
-  screen: Screen.Table({ game }),
+  screen: Screen.Table({ game, celebration: Celebration.Quiet() }),
   deviceId: DEVICE_ID,
   maybePlayerName: Option.some('Sam'),
   friendGames: [],
@@ -97,6 +98,16 @@ const gameOf = (model: Model): Game =>
       throw new Error('expected the table')
     },
   })
+
+const celebrationOf = (model: Model): Celebration =>
+  Screen.matchOrElse(
+    model.screen,
+    {
+      Table: ({ celebration }) => celebration,
+      Friend: ({ celebration }) => celebration,
+    },
+    () => Celebration.Quiet(),
+  )
 
 const botsTurn = (): Game =>
   modifyFields(deal(newBotGame(), buildDeck(1)), { currentIndex: () => 1 })
@@ -270,7 +281,7 @@ describe('update', () => {
     )
   })
 
-  test('ending a bot game counts it once and saves the stats', () => {
+  test('ending a bot game counts it once, saves the stats and celebrates the win once', () => {
     const roundOver = modifyFields(deal(newBotGame(), buildDeck(1)), {
       phase: () => Phase.RoundOver({ finisherIndexes: [0] }),
     })
@@ -285,12 +296,18 @@ describe('update', () => {
         expect(next.stats.bot.won).toBe(1)
         expect(next.stats.bot.endedEarly).toBe(1)
         expect(next.stats.total.played).toBe(1)
+        expect(celebrationOf(next)).toEqual(Celebration.Confetti())
       }),
       Command.resolve(SaveStats, Message.CompletedSaveStats()),
+      message(Message.FinishedConfetti()),
+      model(next => {
+        expect(celebrationOf(next)).toEqual(Celebration.Quiet())
+      }),
       message(Message.ClickedEndGame()),
       Command.expectNone(),
       model(next => {
         expect(next.stats.total.played).toBe(1)
+        expect(celebrationOf(next)).toEqual(Celebration.Quiet())
       }),
     )
   })
@@ -445,6 +462,7 @@ describe('update', () => {
             connection: Connection.Connected(),
             invite: Invite.Idle(),
             reactions: noReactions,
+            celebration: Celebration.Quiet(),
           }),
         }),
         message(
@@ -551,6 +569,7 @@ describe('update', () => {
         connection: Connection.Connected(),
         invite: Invite.Idle(),
         reactions: noReactions,
+        celebration: Celebration.Quiet(),
       }),
     })
 
@@ -699,6 +718,7 @@ describe('update', () => {
         connection: Connection.Connected(),
         invite: Invite.Idle(),
         reactions: noReactions,
+        celebration: Celebration.Quiet(),
       }),
     })
 
@@ -721,7 +741,7 @@ describe('update', () => {
       )
     })
 
-    test('a finished game counts once from this seat, however often it comes back', () => {
+    test('a finished game counts and celebrates once from this seat, however often it comes back', () => {
       const over = modifyFields(friendGame(), {
         phase: () => Phase.GameOver({ winnerIndex: 1 }),
       })
@@ -740,12 +760,15 @@ describe('update', () => {
         model(next => {
           expect(next.stats.friends.won).toBe(1)
           expect(next.stats.bot.played).toBe(0)
+          expect(celebrationOf(next)).toEqual(Celebration.Confetti())
         }),
         Command.resolve(SaveStats, Message.CompletedSaveStats()),
+        message(Message.FinishedConfetti()),
         message(seated),
         Command.expectNone(),
         model(next => {
           expect(next.stats.friends.played).toBe(1)
+          expect(celebrationOf(next)).toEqual(Celebration.Quiet())
         }),
       )
     })
