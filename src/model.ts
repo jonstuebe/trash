@@ -5,6 +5,7 @@ import { Dialog } from '@foldkit/ui'
 
 import { Game } from './domain/game'
 import { GameSummary, Intent, Refusal } from './domain/room'
+import { Stats } from './domain/stats'
 import { InviteKind } from './message'
 
 // A friend game this device has a seat in, remembered so the app can reopen
@@ -103,10 +104,19 @@ export const HomeScreen = defineTaggedUnion({
 })
 export type HomeScreen = typeof HomeScreen.Type
 
+// Where the Stats sheet is: showing the numbers, or asking before it
+// clears them.
+export const StatsStep = defineTaggedUnion({
+  Viewing: {},
+  ConfirmingReset: {},
+})
+export type StatsStep = typeof StatsStep.Type
+
 // What the sheet is showing.
 export const Guide = defineTaggedUnion({
   HowToPlay: { page: Schema.Number },
   GetTheApp: {},
+  Stats: { step: StatsStep },
 })
 export type Guide = typeof Guide.Type
 
@@ -127,6 +137,7 @@ export const Model = Schema.Struct({
   deviceId: Schema.String,
   maybePlayerName: Schema.Option(Schema.String),
   friendGames: Schema.Array(FriendGameRow),
+  stats: Stats,
   guide: Guide,
   guideDialog: Dialog.Model,
   homeScreen: HomeScreen,
@@ -139,6 +150,7 @@ export const Flags = Schema.Struct({
   deviceId: Schema.String,
   maybePlayerName: Schema.Option(Schema.String),
   savedFriendGames: Schema.Array(SavedFriendGame),
+  stats: Stats,
   maybeInviteCode: Schema.Option(Schema.String),
   turnAlerts: TurnAlerts,
   homeScreen: HomeScreen,

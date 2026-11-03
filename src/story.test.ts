@@ -15,6 +15,7 @@ import {
   ServerMessage,
   settle,
 } from './domain/room'
+import { emptyStats, recordResult } from './domain/stats'
 import {
   ApplyAppUpdate,
   CancelInvite,
@@ -25,6 +26,7 @@ import {
   RegisterTurnAlerts,
   SaveFriendGames,
   SavePlayerName,
+  SaveStats,
   SendMove,
   ShowUrl,
   ShuffleDeck,
@@ -43,6 +45,7 @@ import {
   HomeScreen,
   Invite,
   Screen,
+  StatsStep,
   TurnAlerts,
 } from './model'
 
@@ -53,6 +56,7 @@ const atTable = (game: Game): Model => ({
   deviceId: DEVICE_ID,
   maybePlayerName: Option.some('Sam'),
   friendGames: [],
+  stats: emptyStats,
   guide: Guide.HowToPlay({ page: 0 }),
   guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
   homeScreen: HomeScreen.Unavailable(),
@@ -92,6 +96,7 @@ describe('update', () => {
         deviceId: DEVICE_ID,
         maybePlayerName: Option.some('Sam'),
         friendGames: [],
+        stats: emptyStats,
         guide: Guide.HowToPlay({ page: 0 }),
         guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
         homeScreen: HomeScreen.Unavailable(),
@@ -176,6 +181,7 @@ describe('update', () => {
         deviceId: DEVICE_ID,
         maybePlayerName: Option.some('Sam'),
         friendGames: [],
+        stats: emptyStats,
         guide: Guide.HowToPlay({ page: 2 }),
         // The enter and leave transitions are the Dialog's business; this
         // story is about the guide's paging.
@@ -248,6 +254,82 @@ describe('update', () => {
     )
   })
 
+  test('ending a bot game counts it once and saves the stats', () => {
+    const roundOver = modifyFields(deal(newBotGame(), buildDeck(1)), {
+      phase: () => Phase.RoundOver({ finisherIndexes: [0] }),
+    })
+
+    story(
+      update,
+      given(atTable(roundOver)),
+      message(Message.ClickedEndGame()),
+      Command.expectHas(SaveStats),
+      model(next => {
+        expect(Phase.guards.Ended(gameOf(next).phase)).toBe(true)
+        expect(next.stats.bot.won).toBe(1)
+        expect(next.stats.bot.endedEarly).toBe(1)
+        expect(next.stats.total.played).toBe(1)
+      }),
+      Command.resolve(SaveStats, Message.CompletedSaveStats()),
+      message(Message.ClickedEndGame()),
+      Command.expectNone(),
+      model(next => {
+        expect(next.stats.total.played).toBe(1)
+      }),
+    )
+  })
+
+  test('the Stats sheet resets the numbers only once confirmed', () => {
+    const played = recordResult(emptyStats, {
+      opponent: 'Bot',
+      outcome: 'Won',
+      ending: 'Finished',
+      rounds: 6,
+    })
+
+    story(
+      update,
+      given<Model>({
+        ...atTable(botsTurn()),
+        screen: Screen.Title(),
+        stats: played,
+        guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID }),
+      }),
+      message(Message.ClickedStats()),
+      Command.expectHas(Dialog.ShowDialog),
+      model(next => {
+        expect(next.guideDialog.isOpen).toBe(true)
+        expect(next.guide).toEqual(Guide.Stats({ step: StatsStep.Viewing() }))
+      }),
+      Command.resolveAll([
+        Dialog.ShowDialog,
+        Dialog.Message.SucceededShowDialog(),
+      ]),
+      message(Message.ClickedResetStats()),
+      model(next => {
+        expect(next.guide).toEqual(
+          Guide.Stats({ step: StatsStep.ConfirmingReset() }),
+        )
+      }),
+      message(Message.ClickedCancelResetStats()),
+      Command.expectNone(),
+      model(next => {
+        expect(next.stats).toEqual(played)
+        expect(next.guide).toEqual(Guide.Stats({ step: StatsStep.Viewing() }))
+      }),
+      message(Message.ClickedConfirmResetStats()),
+      Command.expectNone(),
+      message(Message.ClickedResetStats()),
+      message(Message.ClickedConfirmResetStats()),
+      Command.expectExact(SaveStats({ stats: emptyStats })),
+      model(next => {
+        expect(next.stats).toEqual(emptyStats)
+        expect(next.guide).toEqual(Guide.Stats({ step: StatsStep.Viewing() }))
+      }),
+      Command.resolve(SaveStats, Message.CompletedSaveStats()),
+    )
+  })
+
   test('the human cannot act during a bot turn', () => {
     const game = botsTurn()
 
@@ -268,6 +350,7 @@ describe('update', () => {
       deviceId: DEVICE_ID,
       maybePlayerName: Option.some('Sam'),
       friendGames: [],
+      stats: emptyStats,
       guide: Guide.HowToPlay({ page: 0 }),
       guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
       homeScreen: HomeScreen.Unavailable(),
@@ -518,6 +601,35 @@ describe('update', () => {
       )
     })
 
+    test('a finished game counts once from this seat, however often it comes back', () => {
+      const over = modifyFields(friendGame(), {
+        phase: () => Phase.GameOver({ winnerIndex: 1 }),
+      })
+      const seated = Message.ReceivedServerMessage({
+        message: ServerMessage.Seated({
+          seat: 1,
+          room: RoomView.Playing({ game: over }),
+        }),
+      })
+
+      story(
+        update,
+        given(seatedAt(1)),
+        message(seated),
+        Command.expectHas(SaveStats),
+        model(next => {
+          expect(next.stats.friends.won).toBe(1)
+          expect(next.stats.bot.played).toBe(0)
+        }),
+        Command.resolve(SaveStats, Message.CompletedSaveStats()),
+        message(seated),
+        Command.expectNone(),
+        model(next => {
+          expect(next.stats.friends.played).toBe(1)
+        }),
+      )
+    })
+
     test("a tap on the other player's turn sends nothing", () => {
       story(
         update,
@@ -664,6 +776,7 @@ describe('update', () => {
         { code: 'AAAAAA', intent: 'Host', status: GameStatus.Unknown() },
         { code: 'BBBBBB', intent: 'Join', status: GameStatus.Unknown() },
       ],
+      stats: emptyStats,
       guide: Guide.HowToPlay({ page: 0 }),
       guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
       homeScreen: HomeScreen.Unavailable(),
@@ -681,6 +794,7 @@ describe('update', () => {
         { code: 'AAAAAA', intent: 'Host' },
         { code: 'BBBBBB', intent: 'Join' },
       ],
+      stats: emptyStats,
       maybeInviteCode: Option.none(),
       turnAlerts: TurnAlerts.Off(),
       homeScreen: HomeScreen.Unavailable(),
