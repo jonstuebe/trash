@@ -184,17 +184,18 @@ const menuDotsIcon = (h: H): Html =>
     ),
   )
 
+// Ionicons' trash-outline (MIT).
 const trashIcon = (h: H): Html =>
   h.svg(
-    [h.Class('icon'), h.ViewBox('0 0 24 24'), h.AriaHidden(true)],
+    [h.Class('icon'), h.ViewBox('0 0 512 512'), h.AriaHidden(true)],
     [
       h.path([
         h.D(
-          'M9 3h6m-9 3h12m-1.5 0-.7 12.1a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9L5.5 6M10 10.5v6M14 10.5v6',
+          'M112 112l20 320c.95 18.49 14.4 32 32 32h184c17.67 0 30.87-13.51 32-32l20-320M80 112h352M192 112V72a23.93 23.93 0 0 1 24-24h80a23.93 23.93 0 0 1 24 24v40M256 176v224M184 176l8 224M328 176l-8 224',
         ),
         h.Fill('none'),
         h.Stroke('currentColor'),
-        h.StrokeWidth('1.8'),
+        h.StrokeWidth('32'),
         h.StrokeLinecap('round'),
         h.StrokeLinejoin('round'),
       ]),
