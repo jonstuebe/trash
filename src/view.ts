@@ -32,6 +32,7 @@ import {
   cleanPlayerName,
   roomCodeFromInput,
 } from './domain/room'
+import { type Stats, type Tally, hasPlayed, winRate } from './domain/stats'
 import { Message } from './message'
 import {
   AfterNaming,
@@ -47,6 +48,7 @@ import {
   type Model,
   Screen,
   SoundSetting,
+  StatsStep,
   TurnAlerts,
 } from './model'
 import { DragSheetToDismiss } from './sheetGesture'
@@ -502,9 +504,18 @@ const titleView = (model: Model, h: H): Html =>
             [h.Class('pill glass'), h.OnClick(Message.ClickedPlayBot())],
             ['Play the bot'],
           ),
-          h.button(
-            [h.Class('pill glass'), h.OnClick(Message.ClickedHowToPlay())],
-            ['How to play'],
+          h.div(
+            [h.Class('pill-row')],
+            [
+              h.button(
+                [h.Class('pill glass'), h.OnClick(Message.ClickedHowToPlay())],
+                ['How to play'],
+              ),
+              h.button(
+                [h.Class('pill glass'), h.OnClick(Message.ClickedStats())],
+                ['Stats'],
+              ),
+            ],
           ),
         ],
       ),
@@ -1357,10 +1368,157 @@ const getTheAppContent = (
   ]
 }
 
+// STATS
+
+type StatsRow = Readonly<{ label: string; value: (tally: Tally) => string }>
+
+const NO_VALUE = '–'
+
+const percent = (share: number): string => `${Math.round(share * 100)}%`
+
+const STATS_ROWS: ReadonlyArray<StatsRow> = [
+  { label: 'Played', value: tally => `${tally.played}` },
+  { label: 'Won', value: tally => `${tally.won}` },
+  { label: 'Lost', value: tally => `${tally.lost}` },
+  { label: 'Tied', value: tally => `${tally.tied}` },
+  { label: 'Ended early', value: tally => `${tally.endedEarly}` },
+  {
+    label: 'Win rate',
+    value: tally =>
+      Option.match(winRate(tally), {
+        onNone: () => NO_VALUE,
+        onSome: percent,
+      }),
+  },
+  { label: 'Win streak', value: tally => `${tally.currentStreak}` },
+  { label: 'Best streak', value: tally => `${tally.bestStreak}` },
+  {
+    label: 'Fewest rounds',
+    value: tally =>
+      Option.match(tally.maybeFewestRoundsToWin, {
+        onNone: () => NO_VALUE,
+        onSome: rounds => `${rounds}`,
+      }),
+  },
+]
+
+const statsTable = (stats: Stats, h: H): Html => {
+  const columns: ReadonlyArray<Tally> = [stats.bot, stats.friends, stats.total]
+  return h.table(
+    [h.Class('stats-table')],
+    [
+      h.thead(
+        [],
+        [
+          h.tr(
+            [],
+            [
+              h.td([]),
+              ...Array.map(['Bot', 'Friends', 'Total'], heading =>
+                h.th([h.Scope('col')], [heading]),
+              ),
+            ],
+          ),
+        ],
+      ),
+      h.tbody(
+        [],
+        Array.map(STATS_ROWS, row =>
+          h.tr(
+            [],
+            [
+              h.th([h.Scope('row')], [row.label]),
+              ...Array.map(columns, tally => h.td([], [row.value(tally)])),
+            ],
+          ),
+        ),
+      ),
+    ],
+  )
+}
+
+const statsEmpty = (h: H): Html =>
+  h.div(
+    [h.Class('stats-empty')],
+    [
+      h.p([h.Class('stats-empty-title')], ['No games yet']),
+      h.p(
+        [h.Class('stats-empty-body')],
+        [
+          'Finish a game against the bot or a friend and how it went shows up here.',
+        ],
+      ),
+    ],
+  )
+
+const statsReset = (step: StatsStep, h: H): Html =>
+  StatsStep.match(step, {
+    Viewing: () =>
+      h.button(
+        [h.Class('pill is-quiet'), h.OnClick(Message.ClickedResetStats())],
+        ['Reset stats'],
+      ),
+    ConfirmingReset: () =>
+      h.div(
+        [h.Class('stats-confirm')],
+        [
+          h.p(
+            [h.Class('stats-confirm-text')],
+            ['Reset all stats on this device? This can’t be undone.'],
+          ),
+          h.div(
+            [h.Class('pill-row')],
+            [
+              h.button(
+                [
+                  h.Class('pill glass'),
+                  h.OnClick(Message.ClickedCancelResetStats()),
+                ],
+                ['Cancel'],
+              ),
+              h.button(
+                [
+                  h.Class('pill destructive'),
+                  h.OnClick(Message.ClickedConfirmResetStats()),
+                ],
+                ['Reset'],
+              ),
+            ],
+          ),
+        ],
+      ),
+  })
+
+const statsContent = (
+  stats: Stats,
+  step: StatsStep,
+  render: Dialog.RenderInfo,
+  h: H,
+) => [
+  ...sheetBar('Stats', render, h),
+  ...(hasPlayed(stats)
+    ? [statsTable(stats, h), statsReset(step, h)]
+    : [statsEmpty(h)]),
+  StatsStep.guards.Viewing(step)
+    ? h.button(
+        [h.Class('pill primary'), h.OnClick(Message.ClickedGuideNext())],
+        ['Done'],
+      )
+    : h.empty,
+]
+
 const guideContent = (model: Model, render: Dialog.RenderInfo, h: H) =>
   Guide.match(model.guide, {
     HowToPlay: ({ page }) => howToPlayContent(model, page, render, h),
     GetTheApp: () => getTheAppContent(model.homeScreen, render, h),
+    Stats: ({ step }) => statsContent(model.stats, step, render, h),
+  })
+
+const guideSheetClass = (guide: Guide): string =>
+  Guide.match(guide, {
+    HowToPlay: () => '',
+    GetTheApp: () => 'is-install',
+    Stats: () => 'is-stats',
   })
 
 const guideDialog = (model: Model, h: H): Html =>
@@ -1380,7 +1538,7 @@ const guideDialog = (model: Model, h: H): Html =>
                   [
                     ...render.panel,
                     h.Class(
-                      `sheet material guide ${Guide.guards.GetTheApp(model.guide) ? 'is-install' : ''}`,
+                      `sheet material guide ${guideSheetClass(model.guide)}`,
                     ),
                     h.OnMount(DragSheetToDismiss()),
                   ],

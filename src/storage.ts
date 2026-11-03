@@ -5,6 +5,7 @@ import { KeyValueStore } from 'effect/persistence'
 import { BrowserCrypto, BrowserKeyValueStore } from '@effect/platform-browser'
 
 import { roomCodeFromPath } from './domain/room'
+import { type Stats, StatsJson, emptyStats } from './domain/stats'
 import { type Flags, SavedFriendGame, SoundSetting } from './model'
 import { homeScreenAtStart, turnAlertsAtStart } from './turnAlerts'
 
@@ -19,6 +20,7 @@ const FRIEND_GAMES_KEY = 'trash.friendGames'
 // NOTE: before the game list, a device remembered one game under this key.
 // It's read once, moved into the list, and removed.
 const LEGACY_FRIEND_GAME_KEY = 'trash.friendGame'
+const STATS_KEY = 'trash.stats'
 
 const SavedFriendGameJson = Schema.fromJsonString(
   Schema.toCodecJson(SavedFriendGame),
@@ -82,15 +84,26 @@ const readFriendGames = Effect.gen(function* () {
   return games
 })
 
+// A missing, corrupt or outdated value reads as no games played yet.
+const readStats = Effect.gen(function* () {
+  const store = yield* KeyValueStore.KeyValueStore
+  const json = yield* Effect.fromOption(
+    Option.fromNullishOr(yield* store.get(STATS_KEY)),
+  )
+  return yield* Schema.decodeEffect(StatsJson)(json)
+}).pipe(Effect.orElseSucceed(() => emptyStats))
+
 export const flags: Effect.Effect<Flags> = Effect.gen(function* () {
   const deviceId = yield* readOrCreateDeviceId
   const maybePlayerName = yield* readPlayerName
   const sound = yield* readSound
   const savedFriendGames = yield* readFriendGames
+  const stats = yield* readStats
   return {
     deviceId,
     maybePlayerName,
     savedFriendGames,
+    stats,
     maybeInviteCode: roomCodeFromPath(window.location.pathname),
     sound,
     turnAlerts: turnAlertsAtStart(),
@@ -104,6 +117,7 @@ export const flags: Effect.Effect<Flags> = Effect.gen(function* () {
       deviceId: SecureRandom.uuidV4Unsafe(),
       maybePlayerName: Option.none(),
       savedFriendGames: [],
+      stats: emptyStats,
       maybeInviteCode: roomCodeFromPath(window.location.pathname),
       sound: SoundSetting.Off(),
       turnAlerts: turnAlertsAtStart(),
@@ -133,4 +147,11 @@ export const savePlayerName = (name: string) =>
   Effect.gen(function* () {
     const store = yield* KeyValueStore.KeyValueStore
     yield* store.set(PLAYER_NAME_KEY, name)
+  }).pipe(Effect.provide(BrowserKeyValueStore.layerLocalStorage))
+
+export const saveStats = (stats: Stats) =>
+  Effect.gen(function* () {
+    const store = yield* KeyValueStore.KeyValueStore
+    const json = yield* Schema.encodeEffect(StatsJson)(stats)
+    yield* store.set(STATS_KEY, json)
   }).pipe(Effect.provide(BrowserKeyValueStore.layerLocalStorage))

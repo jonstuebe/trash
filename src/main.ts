@@ -43,6 +43,12 @@ import {
 } from './domain/room'
 import { Sound, soundFor } from './domain/sound'
 import {
+  Stats,
+  recordBotGame,
+  recordFriendGame,
+  resetStats,
+} from './domain/stats'
+import {
   type AlertsOutcome,
   type AlertsPermission,
   InviteKind,
@@ -65,11 +71,17 @@ import {
   SavedFriendGame,
   Screen,
   SoundSetting,
+  StatsStep,
   TurnAlerts,
 } from './model'
 import { RoomSocket, type RoomSocketService } from './roomSocket'
 import { playSound } from './sound'
-import { saveFriendGames, savePlayerName, saveSound } from './storage'
+import {
+  saveFriendGames,
+  savePlayerName,
+  saveSound,
+  saveStats,
+} from './storage'
 import { registerTurnAlerts } from './turnAlerts'
 
 export { Message } from './message'
@@ -146,6 +158,7 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
     deviceId: flags.deviceId,
     maybePlayerName: flags.maybePlayerName,
     friendGames: Array.map(flags.savedFriendGames, unknownRow),
+    stats: flags.stats,
     guide: Guide.HowToPlay({ page: 0 }),
     guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
     homeScreen: flags.homeScreen,
@@ -299,6 +312,20 @@ const soundCommands = (
         PlaySound({ sound }),
       )
     : []
+export const SaveStats = Command.define('SaveStats', {
+  args: { stats: Stats },
+  messages: [Message.CompletedSaveStats],
+  execute: ({ stats }) =>
+    saveStats(stats).pipe(
+      Effect.ignore,
+      Effect.as(Message.CompletedSaveStats()),
+    ),
+})
+
+// The record functions hand back the same Stats when there's nothing to
+// count, so only a game that just got counted is written.
+const saveStatsIfChanged = (before: Stats, after: Stats) =>
+  after === before ? [] : [SaveStats({ stats: after })]
 
 // Asks a game's Room whose turn it is, for the menu. Offline, or with the
 // Room unreachable, the row just shows no status.
@@ -529,13 +556,16 @@ const stepBotGame = (
         if (nextGame === game) {
           return { model }
         }
+        const stats = recordBotGame(model.stats, game, nextGame)
         return {
           model: modifyFields(model, {
             screen: () => Screen.Table({ game: nextGame }),
+            stats: () => stats,
           }),
           commands: [
             ...followUpCommands(nextGame),
             ...soundCommands(model, game, nextGame, BOT_GAME_VIEWER),
+            ...saveStatsIfChanged(model.stats, stats),
           ],
         }
       },
@@ -709,8 +739,26 @@ const turnGuidePage = (model: Model, toPage: (page: number) => number) =>
             page: Math.min(GUIDE_PAGE_COUNT - 1, Math.max(0, toPage(page))),
           }),
         GetTheApp: () => guide,
+        Stats: () => guide,
       }),
   })
+
+const setStatsStep = (model: Model, step: StatsStep): Model =>
+  Guide.guards.Stats(model.guide)
+    ? modifyFields(model, { guide: () => Guide.Stats({ step }) })
+    : model
+
+// Clears the numbers once the player has confirmed it on the Stats sheet.
+const confirmResetStats = (model: Model): UpdateReturn =>
+  Guide.guards.Stats(model.guide) &&
+  StatsStep.guards.ConfirmingReset(model.guide.step)
+    ? {
+        model: modifyFields(setStatsStep(model, StatsStep.Viewing()), {
+          stats: resetStats,
+        }),
+        commands: [SaveStats({ stats: resetStats(model.stats) })],
+      }
+    : { model }
 
 // A Room that's gone (it expired) or that has no seat for this device drops
 // off the list.
@@ -784,21 +832,34 @@ const receiveServerMessage = (
 ): UpdateReturn =>
   withFriendScreen(model, screen =>
     ServerMessage.match(message, {
-      Seated: ({ seat, room }) => ({
-        model: setFriendScreen(
-          model,
-          modifyFields(screen, {
-            seat: () => seat,
-            connection: () => Connection.Connected(),
-            room: () =>
-              RoomView.match(room, {
-                WaitingForGuest: () => FriendRoom.WaitingForGuest(),
-                Playing: ({ game }) => FriendRoom.Playing({ game }),
+      Seated: ({ seat, room }) => {
+        const stats = RoomView.match(room, {
+          WaitingForGuest: () => model.stats,
+          Playing: ({ game }) =>
+            recordFriendGame(model.stats, screen.code, game, seat),
+        })
+        return {
+          model: modifyFields(
+            setFriendScreen(
+              model,
+              modifyFields(screen, {
+                seat: () => seat,
+                connection: () => Connection.Connected(),
+                room: () =>
+                  RoomView.match(room, {
+                    WaitingForGuest: () => FriendRoom.WaitingForGuest(),
+                    Playing: ({ game }) => FriendRoom.Playing({ game }),
+                  }),
               }),
-          }),
-        ),
-        commands: friendSoundCommands(model, screen.room, room, seat),
-      }),
+            ),
+            { stats: () => stats },
+          ),
+          commands: [
+            ...friendSoundCommands(model, screen.room, room, seat),
+            ...saveStatsIfChanged(model.stats, stats),
+          ],
+        }
+      },
       Refused: ({ reason }) =>
         forgetFriendGame(
           setFriendScreen(
@@ -1005,7 +1066,23 @@ export const update = (model: Model, message: Message) =>
             : closeGuide(model)
         },
         GetTheApp: () => closeGuide(model),
+        Stats: () => closeGuide(model),
       }),
+
+    ClickedStats: () =>
+      openSheet(model, Guide.Stats({ step: StatsStep.Viewing() })),
+
+    ClickedResetStats: () => ({
+      model: setStatsStep(model, StatsStep.ConfirmingReset()),
+    }),
+
+    ClickedCancelResetStats: () => ({
+      model: setStatsStep(model, StatsStep.Viewing()),
+    }),
+
+    ClickedConfirmResetStats: () => confirmResetStats(model),
+
+    CompletedSaveStats: () => ({ model }),
 
     ClickedGuidePage: ({ page }) => ({
       model: turnGuidePage(model, () => page),

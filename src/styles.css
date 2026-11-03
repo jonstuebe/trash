@@ -1702,6 +1702,99 @@ button.glass:active:not(:disabled) {
   text-align: center;
 }
 
+/* STATS
+   The same sheet again: one table, a column for each kind of game, short
+   enough to fit a small phone without scrolling. */
+
+.guide.is-stats {
+  gap: 0;
+}
+
+.stats-table {
+  width: 100%;
+  margin: 10px 0 6px;
+  border-collapse: collapse;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-table th,
+.stats-table td {
+  height: 30px;
+  padding: 0 4px;
+  text-align: right;
+}
+
+.stats-table thead th {
+  color: var(--label-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.stats-table tbody th {
+  padding-left: 8px;
+  color: var(--label-2);
+  font-weight: 400;
+  text-align: left;
+}
+
+.stats-table tbody tr:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.stats-table tbody tr > :first-child {
+  border-radius: 10px 0 0 10px;
+}
+
+.stats-table tbody tr > :last-child {
+  border-radius: 0 10px 10px 0;
+  padding-right: 10px;
+  font-weight: 600;
+}
+
+.stats-empty {
+  margin: 28px 8px 30px;
+  text-align: center;
+}
+
+.stats-empty-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.stats-empty-body {
+  margin: 8px 0 0;
+  color: var(--label-2);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.guide.is-stats > .pill.is-quiet {
+  height: 44px;
+  margin-bottom: 6px;
+}
+
+.stats-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 4px 0 2px;
+}
+
+.stats-confirm-text {
+  margin: 0;
+  font-size: 15px;
+  text-align: center;
+}
+
+.pill.destructive {
+  background: #ff453a;
+  color: #fff;
+}
+
 /* MOTION */
 
 /* SHORT SCREENS
