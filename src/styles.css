@@ -422,6 +422,7 @@ button.glass:active:not(:disabled) {
 /* TITLE */
 
 .title-screen {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -800,10 +801,28 @@ button.glass:active:not(:disabled) {
 }
 
 .table-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   height: 48px;
+}
+
+.table-header-actions {
+  display: flex;
+  gap: 8px;
+  justify-self: end;
+}
+
+/* The sound toggle sits in the menu's top corner. */
+.title-sound {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 12px);
+  right: var(--gutter);
+}
+
+.round-button .speaker {
+  width: 22px;
+  height: 22px;
 }
 
 .round-button {

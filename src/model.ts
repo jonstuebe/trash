@@ -129,6 +129,13 @@ export const AppUpdate = defineTaggedUnion({
 })
 export type AppUpdate = typeof AppUpdate.Type
 
+// Whether this device plays sound effects. Off until the player turns it on.
+export const SoundSetting = defineTaggedUnion({
+  Off: {},
+  On: {},
+})
+export type SoundSetting = typeof SoundSetting.Type
+
 export const GUIDE_PAGE_COUNT = 3
 export const GUIDE_DIALOG_ID = 'guide'
 
@@ -141,6 +148,7 @@ export const Model = Schema.Struct({
   guide: Guide,
   guideDialog: Dialog.Model,
   homeScreen: HomeScreen,
+  sound: SoundSetting,
   appUpdate: AppUpdate,
   turnAlerts: TurnAlerts,
 })
@@ -152,6 +160,7 @@ export const Flags = Schema.Struct({
   savedFriendGames: Schema.Array(SavedFriendGame),
   stats: Stats,
   maybeInviteCode: Schema.Option(Schema.String),
+  sound: SoundSetting,
   turnAlerts: TurnAlerts,
   homeScreen: HomeScreen,
 })

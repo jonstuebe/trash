@@ -6,7 +6,7 @@ import { BrowserCrypto, BrowserKeyValueStore } from '@effect/platform-browser'
 
 import { roomCodeFromPath } from './domain/room'
 import { type Stats, StatsJson, emptyStats } from './domain/stats'
-import { type Flags, SavedFriendGame } from './model'
+import { type Flags, SavedFriendGame, SoundSetting } from './model'
 import { homeScreenAtStart, turnAlertsAtStart } from './turnAlerts'
 
 // What this device remembers between visits: its own ID, which the Room uses
@@ -15,6 +15,7 @@ import { homeScreenAtStart, turnAlertsAtStart } from './turnAlerts'
 
 const DEVICE_ID_KEY = 'trash.deviceId'
 const PLAYER_NAME_KEY = 'trash.playerName'
+const SOUND_KEY = 'trash.sound'
 const FRIEND_GAMES_KEY = 'trash.friendGames'
 // NOTE: before the game list, a device remembered one game under this key.
 // It's read once, moved into the list, and removed.
@@ -44,6 +45,14 @@ const readOrCreateDeviceId = Effect.gen(function* () {
 const readPlayerName = Effect.gen(function* () {
   const store = yield* KeyValueStore.KeyValueStore
   return Option.fromNullishOr(yield* store.get(PLAYER_NAME_KEY))
+})
+
+// Sound stays off unless this device turned it on.
+const readSound = Effect.gen(function* () {
+  const store = yield* KeyValueStore.KeyValueStore
+  return (yield* store.get(SOUND_KEY)) === 'On'
+    ? SoundSetting.On()
+    : SoundSetting.Off()
 })
 
 const readLegacyFriendGame = Effect.gen(function* () {
@@ -87,6 +96,7 @@ const readStats = Effect.gen(function* () {
 export const flags: Effect.Effect<Flags> = Effect.gen(function* () {
   const deviceId = yield* readOrCreateDeviceId
   const maybePlayerName = yield* readPlayerName
+  const sound = yield* readSound
   const savedFriendGames = yield* readFriendGames
   const stats = yield* readStats
   return {
@@ -95,6 +105,7 @@ export const flags: Effect.Effect<Flags> = Effect.gen(function* () {
     savedFriendGames,
     stats,
     maybeInviteCode: roomCodeFromPath(window.location.pathname),
+    sound,
     turnAlerts: turnAlertsAtStart(),
     homeScreen: homeScreenAtStart(),
   }
@@ -108,6 +119,7 @@ export const flags: Effect.Effect<Flags> = Effect.gen(function* () {
       savedFriendGames: [],
       stats: emptyStats,
       maybeInviteCode: roomCodeFromPath(window.location.pathname),
+      sound: SoundSetting.Off(),
       turnAlerts: turnAlertsAtStart(),
       homeScreen: homeScreenAtStart(),
     }),
@@ -124,6 +136,12 @@ export const saveFriendGames = (games: ReadonlyArray<SavedFriendGame>) =>
   writeFriendGames(games).pipe(
     Effect.provide(BrowserKeyValueStore.layerLocalStorage),
   )
+
+export const saveSound = (sound: SoundSetting) =>
+  Effect.gen(function* () {
+    const store = yield* KeyValueStore.KeyValueStore
+    yield* store.set(SOUND_KEY, sound._tag)
+  }).pipe(Effect.provide(BrowserKeyValueStore.layerLocalStorage))
 
 export const savePlayerName = (name: string) =>
   Effect.gen(function* () {
