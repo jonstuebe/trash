@@ -150,6 +150,7 @@ const TONES: Record<Exclude<Sound, 'Draw'>, ReadonlyArray<Tone>> = {
   ],
   Lose: notes([G4, E4, C4], 0.09, 0.11, 'triangle'),
   Tie: notes([C5, C5], 0.13, 0.12, 'sine'),
+  Reaction: notes([E5, C6], 0.06, 0.1, 'sine'),
 }
 
 const play = (context: AudioContext, sound: Sound): void => {

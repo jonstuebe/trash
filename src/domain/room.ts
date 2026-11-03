@@ -20,6 +20,7 @@ import {
   trashHeld,
 } from './game'
 import { seatToAct } from './push'
+import { Reaction } from './reaction'
 
 // A friend game lives in a Room, one Durable Object per invite code. The host
 // is the device that opened the room; the guest is the first other device to
@@ -86,6 +87,11 @@ export const ClientMessage = Schema.Struct({
 })
 export type ClientMessage = typeof ClientMessage.Type
 
+// A reaction carries no sequence: it doesn't change the Game, so it can't be
+// made against a stale one.
+export const ClientReaction = Schema.Struct({ reaction: Reaction })
+export type ClientReaction = typeof ClientReaction.Type
+
 export const RoomView = defineTaggedUnion({
   WaitingForGuest: {},
   Playing: { game: Game },
@@ -98,11 +104,15 @@ export type Refusal = typeof Refusal.Type
 export const ServerMessage = defineTaggedUnion({
   Seated: { seat: Schema.Number, room: RoomView },
   Refused: { reason: Refusal },
+  Reacted: { seat: Schema.Number, reaction: Reaction },
 })
 export type ServerMessage = typeof ServerMessage.Type
 
 export const ClientMessageJson = Schema.fromJsonString(
   Schema.toCodecJson(ClientMessage),
+)
+export const ClientReactionJson = Schema.fromJsonString(
+  Schema.toCodecJson(ClientReaction),
 )
 export const ServerMessageJson = Schema.fromJsonString(
   Schema.toCodecJson(ServerMessage),
@@ -317,7 +327,7 @@ export const GameSummaryJson = Schema.fromJsonString(
   Schema.toCodecJson(GameSummary),
 )
 
-const otherSeat = (seatIndex: number): number =>
+export const otherSeat = (seatIndex: number): number =>
   seatIndex === HOST_SEAT ? GUEST_SEAT : HOST_SEAT
 
 export const summaryOf = (

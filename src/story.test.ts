@@ -36,9 +36,11 @@ import {
   SaveSound,
   SaveStats,
   SendMove,
+  SendReaction,
   ShowUrl,
   ShuffleDeck,
   WaitBeforeBotStep,
+  WaitBeforeHideReaction,
   init,
   update,
 } from './main'
@@ -52,10 +54,12 @@ import {
   Guide,
   HomeScreen,
   Invite,
+  ReactionTray,
   Screen,
   SoundSetting,
   StatsStep,
   TurnAlerts,
+  noReactions,
 } from './model'
 
 const DEVICE_ID = 'device-0000-0000-0000'
@@ -440,6 +444,7 @@ describe('update', () => {
             room: FriendRoom.Playing({ game: before }),
             connection: Connection.Connected(),
             invite: Invite.Idle(),
+            reactions: noReactions,
           }),
         }),
         message(
@@ -545,6 +550,7 @@ describe('update', () => {
         room: FriendRoom.WaitingForGuest(),
         connection: Connection.Connected(),
         invite: Invite.Idle(),
+        reactions: noReactions,
       }),
     })
 
@@ -692,6 +698,7 @@ describe('update', () => {
         room: FriendRoom.Playing({ game: friendGame() }),
         connection: Connection.Connected(),
         invite: Invite.Idle(),
+        reactions: noReactions,
       }),
     })
 
@@ -741,6 +748,165 @@ describe('update', () => {
           expect(next.stats.friends.played).toBe(1)
         }),
       )
+    })
+
+    describe('reactions', () => {
+      const reactionsOf = (next: Model) => friendScreenOf(next).reactions
+
+      test('picking a reaction sends it, shows it, and closes the tray', () => {
+        story(
+          update,
+          given(seatedAt(1)),
+          message(Message.ClickedReact()),
+          Command.expectNone(),
+          model(next => {
+            expect(reactionsOf(next).tray).toEqual(ReactionTray.Open())
+          }),
+          message(Message.SelectedReaction({ reaction: 'Laugh' })),
+          Command.expectExact(
+            SendReaction({ reaction: 'Laugh' }),
+            WaitBeforeHideReaction({ id: 0 }),
+          ),
+          model(next => {
+            expect(reactionsOf(next).tray).toEqual(ReactionTray.Closed())
+            expect(reactionsOf(next).shown).toEqual([
+              { id: 0, seat: 1, reaction: 'Laugh' },
+            ])
+          }),
+          Command.resolve(SendReaction, Message.SucceededSendReaction()),
+          Command.resolve(
+            WaitBeforeHideReaction,
+            Message.CompletedWaitBeforeHideReaction({ id: 0 }),
+          ),
+          model(next => {
+            expect(reactionsOf(next).shown).toEqual([])
+          }),
+        )
+      })
+
+      const showing = (
+        seatIndex: number,
+        shown: Model,
+        reaction: 'Fire' | 'Wow',
+      ): Model =>
+        modifyFields(shown, {
+          screen: screen =>
+            Screen.guards.Friend(screen)
+              ? modifyFields(screen, {
+                  reactions: () => ({
+                    ...noReactions,
+                    shown: [{ id: 0, seat: seatIndex, reaction }],
+                    nextId: 1,
+                  }),
+                })
+              : screen,
+        })
+
+      test('another reaction waits until your last one is gone', () => {
+        story(
+          update,
+          given(showing(0, seatedAt(0), 'Fire')),
+          message(Message.SelectedReaction({ reaction: 'Clap' })),
+          Command.expectNone(),
+          model(next => {
+            expect(reactionsOf(next).shown).toEqual([
+              { id: 0, seat: 0, reaction: 'Fire' },
+            ])
+          }),
+        )
+      })
+
+      test('a reaction from the other player shows and chimes when sound is on', () => {
+        story(
+          update,
+          given({ ...seatedAt(0), sound: SoundSetting.On() }),
+          message(
+            Message.ReceivedServerMessage({
+              message: ServerMessage.Reacted({ seat: 1, reaction: 'Wow' }),
+            }),
+          ),
+          Command.expectExact(
+            WaitBeforeHideReaction({ id: 0 }),
+            PlaySound({ sound: 'Reaction' }),
+          ),
+          model(next => {
+            expect(reactionsOf(next).shown).toEqual([
+              { id: 0, seat: 1, reaction: 'Wow' },
+            ])
+          }),
+          Command.resolveAll(
+            [PlaySound, Message.CompletedPlaySound()],
+            [
+              WaitBeforeHideReaction,
+              Message.CompletedWaitBeforeHideReaction({ id: 0 }),
+            ],
+          ),
+          model(next => {
+            expect(reactionsOf(next).shown).toEqual([])
+          }),
+        )
+      })
+
+      test('a newer reaction replaces the last one, and the old timer leaves it up', () => {
+        story(
+          update,
+          given(showing(1, seatedAt(0), 'Wow')),
+          message(
+            Message.ReceivedServerMessage({
+              message: ServerMessage.Reacted({ seat: 1, reaction: 'Trash' }),
+            }),
+          ),
+          Command.expectExact(WaitBeforeHideReaction({ id: 1 })),
+          Command.resolve(
+            WaitBeforeHideReaction,
+            Message.CompletedWaitBeforeHideReaction({ id: 0 }),
+          ),
+          model(next => {
+            expect(reactionsOf(next).shown).toEqual([
+              { id: 1, seat: 1, reaction: 'Trash' },
+            ])
+          }),
+        )
+      })
+
+      test('a dropped socket sends no reaction', () => {
+        story(
+          update,
+          given(
+            modifyFields(seatedAt(0), {
+              screen: screen =>
+                Screen.guards.Friend(screen)
+                  ? modifyFields(screen, {
+                      connection: () => Connection.Disconnected(),
+                    })
+                  : screen,
+            }),
+          ),
+          message(Message.ClickedReact()),
+          message(Message.SelectedReaction({ reaction: 'ThumbsUp' })),
+          Command.expectNone(),
+          model(next => {
+            expect(reactionsOf(next).tray).toEqual(ReactionTray.Closed())
+          }),
+        )
+      })
+
+      test('Escape and a tap outside close the tray', () => {
+        story(
+          update,
+          given(seatedAt(0)),
+          message(Message.ClickedReact()),
+          message(Message.PressedEscapeOnReactions()),
+          model(next => {
+            expect(reactionsOf(next).tray).toEqual(ReactionTray.Closed())
+          }),
+          message(Message.ClickedReact()),
+          message(Message.ClickedOutsideReactions()),
+          model(next => {
+            expect(reactionsOf(next).tray).toEqual(ReactionTray.Closed())
+          }),
+        )
+      })
     })
 
     test("a tap on the other player's turn sends nothing", () => {
