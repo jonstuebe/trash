@@ -12,6 +12,13 @@ import {
 } from './main'
 import { subscriptions } from './subscription'
 
+// iOS Safari ignores user-scalable=no, so pinch zoom is blocked here too.
+for (const gesture of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(gesture, event => event.preventDefault(), {
+    passive: false,
+  })
+}
+
 const application = Runtime.makeApplication({
   Model,
   Flags,
