@@ -15,6 +15,7 @@ import {
   drawFromStock,
   endGame,
   isComplete,
+  isRoundWin,
   newBotGame,
   newFriendGame,
   nextRound,
@@ -191,6 +192,22 @@ describe('ending a round', () => {
     expect(Array.map(next.players, player => player.target)).toEqual([2, 10])
     expect(Phase.guards.Shuffling(next.phase)).toBe(true)
     expect(next.currentIndex).toBe(1)
+  })
+
+  test('a round is won by the players who finished it, once', () => {
+    const game = withSlots(
+      withSlots(playing({ stock: [card(13), card(3)] }), 0, almostDone(3)),
+      1,
+      hiddenRow(10),
+    )
+    const finished = placeHeld(drawFromStock(game), 2)
+    const lastTurn = botStep(finished)
+    const roundOver = botStep(lastTurn)
+
+    expect(isRoundWin(lastTurn, roundOver, 0)).toBe(true)
+    expect(isRoundWin(lastTurn, roundOver, 1)).toBe(false)
+    expect(isRoundWin(roundOver, roundOver, 0)).toBe(false)
+    expect(isRoundWin(game, finished, 0)).toBe(false)
   })
 
   test('finishing a one-card round wins the game', () => {

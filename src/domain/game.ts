@@ -180,6 +180,18 @@ export const isHumanTurn = (game: Game): boolean =>
 export const isViewerTurn = (game: Game, viewer: number): boolean =>
   game.currentIndex === viewer && currentPlayer(game).seat === 'Human'
 
+// The viewer won a round when it just ended and they finished it, so they
+// play one fewer card next round. Only the step into RoundOver counts, so
+// getting the same RoundOver Game again (a reconnect) doesn't.
+export const isRoundWin = (
+  before: Game,
+  after: Game,
+  viewer: number,
+): boolean =>
+  !Phase.guards.RoundOver(before.phase) &&
+  Phase.guards.RoundOver(after.phase) &&
+  Array.contains(after.phase.finisherIndexes, viewer)
+
 // HIDDEN CARDS
 
 const UNKNOWN_CARD: Card = { id: -1, rank: 0, suit: 'Spades' }
