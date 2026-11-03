@@ -41,6 +41,7 @@ import {
   roomCodeFromInput,
   roomPath,
 } from './domain/room'
+import { Sound, soundFor } from './domain/sound'
 import {
   type AlertsOutcome,
   type AlertsPermission,
@@ -63,10 +64,12 @@ import {
   Model,
   SavedFriendGame,
   Screen,
+  SoundSetting,
   TurnAlerts,
 } from './model'
 import { RoomSocket, type RoomSocketService } from './roomSocket'
-import { saveFriendGames, savePlayerName } from './storage'
+import { playSound } from './sound'
+import { saveFriendGames, savePlayerName, saveSound } from './storage'
 import { registerTurnAlerts } from './turnAlerts'
 
 export { Message } from './message'
@@ -146,6 +149,7 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
     guide: Guide.HowToPlay({ page: 0 }),
     guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
     homeScreen: flags.homeScreen,
+    sound: flags.sound,
     appUpdate: AppUpdate.None(),
     turnAlerts: flags.turnAlerts,
   }
@@ -264,6 +268,37 @@ export const SavePlayerName = Command.define('SavePlayerName', {
       Effect.as(Message.CompletedSavePlayerName()),
     ),
 })
+
+export const SaveSound = Command.define('SaveSound', {
+  args: { sound: SoundSetting },
+  messages: [Message.CompletedSaveSound],
+  execute: ({ sound }) =>
+    saveSound(sound).pipe(
+      Effect.ignore,
+      Effect.as(Message.CompletedSaveSound()),
+    ),
+})
+
+export const PlaySound = Command.define('PlaySound', {
+  args: { sound: Sound },
+  messages: [Message.CompletedPlaySound],
+  execute: ({ sound }) =>
+    playSound(sound).pipe(Effect.as(Message.CompletedPlaySound())),
+})
+
+// The sound a transition makes, when sound is on. Only a transition that
+// happened makes one, so a stale Command result stays silent.
+const soundCommands = (
+  model: Model,
+  before: Game,
+  after: Game,
+  viewer: number,
+) =>
+  SoundSetting.guards.On(model.sound)
+    ? Array.map(Option.toArray(soundFor(before, after, viewer)), sound =>
+        PlaySound({ sound }),
+      )
+    : []
 
 // Asks a game's Room whose turn it is, for the menu. Offline, or with the
 // Room unreachable, the row just shows no status.
@@ -480,6 +515,8 @@ const whenSequence =
   (game: Game): Game =>
     game.sequence === sequence ? transition(game) : game
 
+const BOT_GAME_VIEWER = 0
+
 const stepBotGame = (
   model: Model,
   transition: (game: Game) => Game,
@@ -496,7 +533,10 @@ const stepBotGame = (
           model: modifyFields(model, {
             screen: () => Screen.Table({ game: nextGame }),
           }),
-          commands: followUpCommands(nextGame),
+          commands: [
+            ...followUpCommands(nextGame),
+            ...soundCommands(model, game, nextGame, BOT_GAME_VIEWER),
+          ],
         }
       },
     },
@@ -728,6 +768,16 @@ const whenPhase =
   (game: Game): Option.Option<Move> =>
     isPhase(game.phase) ? Option.some(move) : Option.none()
 
+const friendSoundCommands = (
+  model: Model,
+  before: FriendRoom,
+  after: RoomView,
+  seat: number,
+) =>
+  FriendRoom.guards.Playing(before) && RoomView.guards.Playing(after)
+    ? soundCommands(model, before.game, after.game, seat)
+    : []
+
 const receiveServerMessage = (
   model: Model,
   message: ServerMessage,
@@ -747,6 +797,7 @@ const receiveServerMessage = (
               }),
           }),
         ),
+        commands: friendSoundCommands(model, screen.room, room, seat),
       }),
       Refused: ({ reason }) =>
         forgetFriendGame(
@@ -963,6 +1014,29 @@ export const update = (model: Model, message: Message) =>
     GotGuideDialogMessage: ({ message }) => foldGuideDialog(model, message),
 
     SwipedDownGuide: () => closeGuide(model),
+
+    // The toggle's Mount has already started audio in the tap (see
+    // ToggleSound), which iOS requires.
+    ClickedToggleSound: () => {
+      const sound = SoundSetting.guards.On(model.sound)
+        ? SoundSetting.Off()
+        : SoundSetting.On()
+      return {
+        model: modifyFields(model, { sound: () => sound }),
+        commands: [
+          SaveSound({ sound }),
+          ...(SoundSetting.guards.On(sound)
+            ? [PlaySound({ sound: 'Place' })]
+            : []),
+        ],
+      }
+    },
+
+    CompletedSaveSound: () => ({ model }),
+
+    UnlockedSound: () => ({ model }),
+
+    CompletedPlaySound: () => ({ model }),
 
     CompletedShuffleDeck: ({ sequence, deck }) =>
       stepBotGame(

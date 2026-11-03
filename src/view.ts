@@ -46,9 +46,11 @@ import {
   Invite,
   type Model,
   Screen,
+  SoundSetting,
   TurnAlerts,
 } from './model'
 import { DragSheetToDismiss } from './sheetGesture'
+import { ToggleSound, UnlockSoundOnTap } from './sound'
 import { AskForTurnAlerts } from './turnAlerts'
 
 type H = HtmlBuilder<Message>
@@ -195,6 +197,31 @@ const trashIcon = (h: H): Html =>
         h.StrokeLinejoin('round'),
       ]),
     ],
+  )
+
+// A speaker, with sound waves when sound is on and a cross when it's off.
+const speakerIcon = (sound: SoundSetting, h: H): Html =>
+  strokeIcon(
+    'speaker',
+    SoundSetting.match(sound, {
+      On: () =>
+        'M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11',
+      Off: () => 'M4 9.5h3.5L12 5.5v13l-4.5-4H4zM16 9.5l5 5M21 9.5l-5 5',
+    }),
+    h,
+  )
+
+// The sound toggle, on the menu and in the table header. Its Mount starts
+// audio inside the tap, which iOS requires.
+const soundButton = (sound: SoundSetting, className: string, h: H): Html =>
+  h.button(
+    [
+      h.Class(`round-button glass ${className}`),
+      h.AriaLabel('Sound effects'),
+      h.AriaPressed(SoundSetting.guards.On(sound) ? 'true' : 'false'),
+      h.OnMount(ToggleSound()),
+    ],
+    [speakerIcon(sound, h)],
   )
 
 const bellIcon = (h: H): Html =>
@@ -443,6 +470,7 @@ const titleView = (model: Model, h: H): Html =>
       ),
     ],
     [
+      soundButton(model.sound, 'title-sound', h),
       titleFan(h),
       h.h1([h.Class('wordmark')], ['Trash']),
       h.p([h.Class('tagline')], ['Flip Ace through Ten before anyone else.']),
@@ -1366,7 +1394,7 @@ const guideDialog = (model: Model, h: H): Html =>
 
 // TABLE
 
-const tableHeader = (game: Game, h: H): Html =>
+const tableHeader = (game: Game, sound: SoundSetting, h: H): Html =>
   h.header(
     [h.Class('table-header')],
     [
@@ -1385,13 +1413,19 @@ const tableHeader = (game: Game, h: H): Html =>
           h.span([h.Class('round-number')], [`${game.round}`]),
         ],
       ),
-      h.button(
+      h.div(
+        [h.Class('table-header-actions')],
         [
-          h.Class('round-button glass'),
-          h.AriaLabel('How to play'),
-          h.OnClick(Message.ClickedHowToPlay()),
+          soundButton(sound, '', h),
+          h.button(
+            [
+              h.Class('round-button glass'),
+              h.AriaLabel('How to play'),
+              h.OnClick(Message.ClickedHowToPlay()),
+            ],
+            [questionmarkIcon(h)],
+          ),
         ],
-        [questionmarkIcon(h)],
       ),
     ],
   )
@@ -1409,11 +1443,11 @@ const phaseSheet = (table: Table, h: H): Html =>
     () => h.empty,
   )
 
-const tableView = (table: Table, h: H): Html =>
+const tableView = (table: Table, sound: SoundSetting, h: H): Html =>
   h.main(
     [h.Class('table')],
     [
-      tableHeader(table.game, h),
+      tableHeader(table.game, sound, h),
       opponentsView(table, h),
       tableCenterView(table, h),
       boardView(table, h),
@@ -1768,12 +1802,18 @@ const friendTable = (
   maybeTurnAlerts: Option.some(turnAlerts),
 })
 
-const friendView = (screen: FriendScreen, turnAlerts: TurnAlerts, h: H): Html =>
+const friendView = (
+  screen: FriendScreen,
+  turnAlerts: TurnAlerts,
+  sound: SoundSetting,
+  h: H,
+): Html =>
   FriendRoom.match(screen.room, {
     Loading: () => connectingView(screen.connection, h),
     WaitingForGuest: () =>
       lobbyView(screen.code, screen.invite, screen.connection, turnAlerts, h),
-    Playing: ({ game }) => tableView(friendTable(screen, game, turnAlerts), h),
+    Playing: ({ game }) =>
+      tableView(friendTable(screen, game, turnAlerts), sound, h),
     Refused: ({ reason }) => refusedView(reason, h),
   })
 
@@ -1888,8 +1928,8 @@ export const view = (model: Model, h: H): Document => ({
         JoiningGame: screen => joiningView(screen, h),
         StartingFriendGame: () =>
           friendNotice('Setting up…', 'Making your game.', [], h),
-        Table: ({ game }) => tableView(botTable(game), h),
-        Friend: screen => friendView(screen, model.turnAlerts, h),
+        Table: ({ game }) => tableView(botTable(game), model.sound, h),
+        Friend: screen => friendView(screen, model.turnAlerts, model.sound, h),
       }),
       Option.match(screenTable(model), {
         onNone: () => h.empty,
@@ -1897,6 +1937,9 @@ export const view = (model: Model, h: H): Document => ({
       }),
       guideDialog(model, h),
       updateBanner(model, h),
+      SoundSetting.guards.On(model.sound)
+        ? h.div([h.Hidden(true), h.OnMount(UnlockSoundOnTap())])
+        : h.empty,
     ],
   ),
 })

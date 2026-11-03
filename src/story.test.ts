@@ -6,7 +6,13 @@ import { describe, expect, test } from 'vitest'
 import { Dialog } from '@foldkit/ui'
 
 import { buildDeck } from './domain/card'
-import { type Game, Phase, deal, newBotGame } from './domain/game'
+import {
+  type Game,
+  Phase,
+  deal,
+  drawFromStock,
+  newBotGame,
+} from './domain/game'
 import { newFriendGame } from './domain/game'
 import {
   GameSummary,
@@ -22,9 +28,11 @@ import {
   GenerateRoomCode,
   Message,
   type Model,
+  PlaySound,
   RegisterTurnAlerts,
   SaveFriendGames,
   SavePlayerName,
+  SaveSound,
   SendMove,
   ShowUrl,
   ShuffleDeck,
@@ -43,6 +51,7 @@ import {
   HomeScreen,
   Invite,
   Screen,
+  SoundSetting,
   TurnAlerts,
 } from './model'
 
@@ -56,6 +65,7 @@ const atTable = (game: Game): Model => ({
   guide: Guide.HowToPlay({ page: 0 }),
   guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
   homeScreen: HomeScreen.Unavailable(),
+  sound: SoundSetting.Off(),
   appUpdate: AppUpdate.None(),
   turnAlerts: TurnAlerts.Off(),
 })
@@ -95,6 +105,7 @@ describe('update', () => {
         guide: Guide.HowToPlay({ page: 0 }),
         guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
         homeScreen: HomeScreen.Unavailable(),
+        sound: SoundSetting.Off(),
         appUpdate: AppUpdate.None(),
         turnAlerts: TurnAlerts.Off(),
       }),
@@ -181,6 +192,7 @@ describe('update', () => {
         // story is about the guide's paging.
         guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID }),
         homeScreen: HomeScreen.Unavailable(),
+        sound: SoundSetting.Off(),
         appUpdate: AppUpdate.None(),
         turnAlerts: TurnAlerts.Off(),
       }),
@@ -262,6 +274,106 @@ describe('update', () => {
     )
   })
 
+  describe('sound effects', () => {
+    const humansTurn = (): Game => deal(newBotGame(), buildDeck(1))
+
+    const withSound = (game: Game): Model => ({
+      ...atTable(game),
+      sound: SoundSetting.On(),
+    })
+
+    test('sound is off until the player turns it on, and the choice is saved', () => {
+      story(
+        update,
+        given(atTable(humansTurn())),
+        message(Message.ClickedStock()),
+        Command.expectNone(),
+        message(Message.ClickedToggleSound()),
+        Command.expectExact(
+          SaveSound({ sound: SoundSetting.On() }),
+          PlaySound({ sound: 'Place' }),
+        ),
+        model(next => {
+          expect(SoundSetting.guards.On(next.sound)).toBe(true)
+        }),
+        Command.resolveAll(
+          [SaveSound, Message.CompletedSaveSound()],
+          [PlaySound, Message.CompletedPlaySound()],
+        ),
+        message(Message.ClickedToggleSound()),
+        Command.expectExact(SaveSound({ sound: SoundSetting.Off() })),
+        model(next => {
+          expect(SoundSetting.guards.Off(next.sound)).toBe(true)
+        }),
+        Command.resolve(SaveSound, Message.CompletedSaveSound()),
+      )
+    })
+
+    test("the player's own move plays its sound", () => {
+      story(
+        update,
+        given(withSound(humansTurn())),
+        message(Message.ClickedStock()),
+        Command.expectExact(PlaySound({ sound: 'Draw' })),
+        Command.resolve(PlaySound, Message.CompletedPlaySound()),
+      )
+    })
+
+    test('a stale bot step plays nothing', () => {
+      const game = botsTurn()
+
+      story(
+        update,
+        given(withSound(game)),
+        message(
+          Message.CompletedWaitBeforeBotStep({ sequence: game.sequence - 1 }),
+        ),
+        Command.expectNone(),
+        message(
+          Message.CompletedWaitBeforeBotStep({ sequence: game.sequence }),
+        ),
+        Command.expectHas(WaitBeforeBotStep, PlaySound),
+        Command.resolveAll(
+          [
+            WaitBeforeBotStep,
+            Message.CompletedWaitBeforeBotStep({ sequence: -1 }),
+          ],
+          [PlaySound, Message.CompletedPlaySound()],
+        ),
+      )
+    })
+
+    test("a friend's move plays as it arrives over the socket", () => {
+      const before = settle(newFriendGame(), cards => cards)
+      const after = drawFromStock(before)
+
+      story(
+        update,
+        given<Model>({
+          ...withSound(before),
+          screen: Screen.Friend({
+            code: 'K7QXMP',
+            intent: 'Join',
+            seat: 1,
+            room: FriendRoom.Playing({ game: before }),
+            connection: Connection.Connected(),
+            invite: Invite.Idle(),
+          }),
+        }),
+        message(
+          Message.ReceivedServerMessage({
+            message: ServerMessage.Seated({
+              seat: 1,
+              room: RoomView.Playing({ game: after }),
+            }),
+          }),
+        ),
+        Command.expectExact(PlaySound({ sound: 'Draw' })),
+        Command.resolve(PlaySound, Message.CompletedPlaySound()),
+      )
+    })
+  })
+
   describe('friend game', () => {
     const atTitle = (): Model => ({
       screen: Screen.Title(),
@@ -271,6 +383,7 @@ describe('update', () => {
       guide: Guide.HowToPlay({ page: 0 }),
       guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
       homeScreen: HomeScreen.Unavailable(),
+      sound: SoundSetting.Off(),
       appUpdate: AppUpdate.None(),
       turnAlerts: TurnAlerts.Off(),
     })
@@ -667,6 +780,7 @@ describe('update', () => {
       guide: Guide.HowToPlay({ page: 0 }),
       guideDialog: Dialog.init({ id: GUIDE_DIALOG_ID, isAnimated: true }),
       homeScreen: HomeScreen.Unavailable(),
+      sound: SoundSetting.Off(),
       appUpdate: AppUpdate.None(),
       turnAlerts: TurnAlerts.Off(),
       ...overrides,
@@ -682,6 +796,7 @@ describe('update', () => {
         { code: 'BBBBBB', intent: 'Join' },
       ],
       maybeInviteCode: Option.none(),
+      sound: SoundSetting.Off(),
       turnAlerts: TurnAlerts.Off(),
       homeScreen: HomeScreen.Unavailable(),
       ...overrides,
