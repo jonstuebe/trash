@@ -8,11 +8,11 @@ import { Message } from './message'
 // end becomes a Message. Leaving the screen removes the canvas, which stops
 // the animation.
 
-const DURATION_MS = 3000
-const FADE_MS = 500
+const DURATION_MS = 5000
+const FADE_MS = 800
 const PIECE_COUNT = 110
 // Pieces start falling over this long, so they don't arrive as one wall.
-const RELEASE_SPREAD_MS = 1100
+const RELEASE_SPREAD_MS = 1500
 // Enough for a sharp picture; more just costs frames on an older iPhone.
 const MAX_PIXEL_RATIO = 2
 
@@ -53,10 +53,10 @@ const makePiece = (width: number, height: number): Effect.Effect<Piece> =>
       delayMs: yield* between(0, RELEASE_SPREAD_MS),
       fallPxPerMs: fallPxPerMs * (yield* between(0.7, 1.2)),
       driftPx: yield* between(12, 36),
-      wobblePerMs: yield* between(0.002, 0.005),
+      wobblePerMs: yield* between(0.0012, 0.003),
       phase: yield* between(0, Math.PI * 2),
-      spinPerMs: yield* between(-0.008, 0.008),
-      flipPerMs: yield* between(0.006, 0.014),
+      spinPerMs: yield* between(-0.004, 0.004),
+      flipPerMs: yield* between(0.003, 0.007),
       width: yield* between(6, 10),
       height: yield* between(9, 15),
       color: COLORS[colorIndex] ?? '#ffffff',
