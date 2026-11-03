@@ -20,6 +20,7 @@ import {
   endGame,
   isBotActing,
   isHumanTurn,
+  isRoundWin,
   isViewerTurn,
   newBotGame,
   nextRound,
@@ -333,13 +334,15 @@ export const SaveStats = Command.define('SaveStats', {
 
 // The record functions hand back the same Stats when there's nothing to
 // count, so only a game that just got counted is written.
-// Confetti starts when recording a game counts a new win for the person.
+// Confetti starts when the person wins a round, or when recording a game
+// counts a new win for them.
 const celebrationAfter = (
   celebration: Celebration,
   before: Stats,
   after: Stats,
+  isRoundWon: boolean,
 ): Celebration =>
-  isNewWin(before, after) ? Celebration.Confetti() : celebration
+  isRoundWon || isNewWin(before, after) ? Celebration.Confetti() : celebration
 
 const finishConfetti = (model: Model): UpdateReturn =>
   Screen.matchOrElse(
@@ -624,7 +627,12 @@ const stepBotGame = (
             screen: () =>
               Screen.Table({
                 game: nextGame,
-                celebration: celebrationAfter(celebration, model.stats, stats),
+                celebration: celebrationAfter(
+                  celebration,
+                  model.stats,
+                  stats,
+                  isRoundWin(game, nextGame, BOT_GAME_VIEWER),
+                ),
               }),
             stats: () => stats,
           }),
@@ -912,7 +920,14 @@ const receiveServerMessage = (
                 seat: () => seat,
                 connection: () => Connection.Connected(),
                 celebration: celebration =>
-                  celebrationAfter(celebration, model.stats, stats),
+                  celebrationAfter(
+                    celebration,
+                    model.stats,
+                    stats,
+                    FriendRoom.guards.Playing(screen.room) &&
+                      RoomView.guards.Playing(room) &&
+                      isRoundWin(screen.room.game, room.game, seat),
+                  ),
                 room: () =>
                   RoomView.match(room, {
                     WaitingForGuest: () => FriendRoom.WaitingForGuest(),
