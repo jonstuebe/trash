@@ -17,6 +17,7 @@ import {
   completeReshuffle,
   deal,
   drawFromStock,
+  endGame,
   isBotActing,
   isHumanTurn,
   isViewerTurn,
@@ -1024,10 +1025,14 @@ export const update = (model: Model, message: Message) =>
         whenPhase(Phase.guards.RoundOver, Move.NextRound())(game),
       ),
 
+    // A bot game always seats the person at 0.
     ClickedEndGame: () =>
-      sendFriendMove((game, _seat) =>
-        whenPhase(Phase.guards.RoundOver, Move.EndGame())(game),
-      )(model),
+      onTableTap(
+        model,
+        game => endGame(game, 0),
+        (game, _seat) =>
+          whenPhase(Phase.guards.RoundOver, Move.EndGame())(game),
+      ),
 
     ClickedLeaveTable: () =>
       Screen.matchOrElse(

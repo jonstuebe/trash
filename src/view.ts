@@ -985,12 +985,10 @@ const roundOverSheet = (
         [h.Class('pill primary'), h.OnClick(Message.ClickedNextRound())],
         ['Next round'],
       ),
-      Option.isSome(table.maybeConnection)
-        ? h.button(
-            [h.Class('pill glass'), h.OnClick(Message.ClickedEndGame())],
-            ["I'm done"],
-          )
-        : h.empty,
+      h.button(
+        [h.Class('pill glass'), h.OnClick(Message.ClickedEndGame())],
+        ["I'm done"],
+      ),
     ],
     'Round over',
     h,
@@ -1084,8 +1082,21 @@ const endedSheet = (
           ),
         ),
       ),
+      // A friend game has no rematch after it's ended; a bot game can just
+      // start over.
+      Option.isNone(table.maybeConnection)
+        ? h.button(
+            [h.Class('pill primary'), h.OnClick(Message.ClickedPlayAgain())],
+            ['Play again'],
+          )
+        : h.empty,
       h.button(
-        [h.Class('pill primary'), h.OnClick(Message.ClickedLeaveTable())],
+        [
+          h.Class(
+            `pill ${Option.isNone(table.maybeConnection) ? 'glass' : 'primary'}`,
+          ),
+          h.OnClick(Message.ClickedLeaveTable()),
+        ],
         ['Leave table'],
       ),
     ],
